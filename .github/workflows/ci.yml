@@ -89,6 +89,9 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: upgrade npm (OIDC trusted publishing needs >=11.5.1)
+        run: npm install -g npm@latest
+
       - name: verify tag matches package.json version
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
@@ -101,7 +104,5 @@ jobs:
       - name: run tests one more time
         run: npm test
 
-      - name: publish with provenance
+      - name: publish with provenance (OIDC trusted publishing)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
