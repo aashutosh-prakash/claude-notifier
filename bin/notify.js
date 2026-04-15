@@ -34,7 +34,7 @@ async function main() {
     const raw = await readStdin();
     if (raw.trim()) payload = JSON.parse(raw);
   } catch (err) {
-    process.stderr.write(`claude-notifier: failed to parse stdin JSON: ${err.message}\n`);
+    process.stderr.write(`claude-nudge: failed to parse stdin JSON: ${err.message}\n`);
   }
 
   const message = sanitize(payload.message || DEFAULT_MESSAGE, MAX_MESSAGE_LEN);
@@ -53,7 +53,7 @@ async function main() {
       { stdio: ['ignore', 'ignore', 'inherit'] }
     );
   } catch (err) {
-    process.stderr.write(`claude-notifier: osascript failed: ${err.message}\n`);
+    process.stderr.write(`claude-nudge: osascript failed: ${err.message}\n`);
   }
 
   process.exit(0);

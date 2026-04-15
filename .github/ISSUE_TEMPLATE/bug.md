@@ -21,7 +21,7 @@ labels: bug
 
 ## Environment
 
-- `npx claude-notifier --doctor` output:
+- `npx claude-nudge --doctor` output:
   ```
   <paste here>
   ```

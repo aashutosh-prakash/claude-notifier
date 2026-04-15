@@ -16,7 +16,7 @@ These are load-bearing invariants — regressions are security bugs:
 - **Input sanitization.** All stdin-derived strings have control characters stripped (`\x00-\x1F`, `\x7F`) and are length-clamped before reaching `osascript`.
 - **Atomic, symlink-safe settings writes.** `~/.claude/settings.json` is written via `tmp + rename`, and the installer refuses to write through a symlink pointing outside `~/.claude/`.
 - **Restrictive backup permissions.** Backup directory mode `0700`, backup file mode `0600` — contents may include tokens from `settings.json`.
-- **Published with npm provenance.** Verify with `npm audit signatures claude-notifier`. Releases are published from GitHub Actions via OIDC trusted publishing; no long-lived `NPM_TOKEN` in repo secrets.
+- **Published with npm provenance.** Verify with `npm audit signatures claude-nudge`. Releases are published from GitHub Actions via OIDC trusted publishing; no long-lived `NPM_TOKEN` in repo secrets.
 
 ## Out of scope
 

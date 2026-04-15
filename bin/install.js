@@ -9,7 +9,7 @@ const { execFileSync, execSync } = require('node:child_process');
 const PKG = require('../package.json');
 
 const MATCHER = 'permission_prompt';
-const RUNNER_MARKER = 'claude-notifier/notify.js';
+const RUNNER_MARKER = 'claude-nudge/notify.js';
 const KEEP_BACKUPS = 5;
 const COUNTDOWN_SECONDS = 3;
 
@@ -48,7 +48,7 @@ function parseArgs(argv) {
       case '-h': case '--help': flags.help = true; flags.install = false; break;
       case '-v': case '--version': flags.version = true; flags.install = false; break;
       default:
-        process.stderr.write(`claude-notifier: unknown flag: ${arg}\n`);
+        process.stderr.write(`claude-nudge: unknown flag: ${arg}\n`);
         process.exit(2);
     }
   }
@@ -56,20 +56,20 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  process.stdout.write(`claude-notifier — macOS notification hook for Claude Code
+  process.stdout.write(`claude-nudge — macOS notification hook for Claude Code
 
 Usage:
-  npx claude-notifier              Install the Notification hook into ~/.claude/settings.json
-  npx claude-notifier --uninstall  Remove the hook (and runner directory)
-  npx claude-notifier --test       Fire a sample notification to verify install
-  npx claude-notifier --doctor     Diagnose install health
-  npx claude-notifier --dry-run    Show what would change without writing
-  npx claude-notifier --force      Skip the 3s confirm when replacing a foreign hook
-  npx claude-notifier --keep-backups   On --uninstall, retain the backup directory
-  npx claude-notifier --help       This text
-  npx claude-notifier --version    Print version
+  npx claude-nudge              Install the Notification hook into ~/.claude/settings.json
+  npx claude-nudge --uninstall  Remove the hook (and runner directory)
+  npx claude-nudge --test       Fire a sample notification to verify install
+  npx claude-nudge --doctor     Diagnose install health
+  npx claude-nudge --dry-run    Show what would change without writing
+  npx claude-nudge --force      Skip the 3s confirm when replacing a foreign hook
+  npx claude-nudge --keep-backups   On --uninstall, retain the backup directory
+  npx claude-nudge --help       This text
+  npx claude-nudge --version    Print version
 
-Docs: https://github.com/aashutosh-prakash/claude-notifier
+Docs: https://github.com/aashutosh-prakash/claude-nudge
 `);
 }
 
@@ -80,7 +80,7 @@ function fail(msg, code = 1) {
 
 function ensureMac() {
   if (process.platform !== 'darwin') {
-    fail(`claude-notifier only supports macOS. Detected platform: ${process.platform}`);
+    fail(`claude-nudge only supports macOS. Detected platform: ${process.platform}`);
   }
 }
 
@@ -100,9 +100,9 @@ function paths(home) {
   return {
     claudeDir,
     settings: path.join(claudeDir, 'settings.json'),
-    runnerDir: path.join(claudeDir, 'claude-notifier'),
-    runner: path.join(claudeDir, 'claude-notifier', 'notify.js'),
-    backupDir: path.join(claudeDir, '.claude-notifier-backups'),
+    runnerDir: path.join(claudeDir, 'claude-nudge'),
+    runner: path.join(claudeDir, 'claude-nudge', 'notify.js'),
+    backupDir: path.join(claudeDir, '.claude-nudge-backups'),
   };
 }
 
@@ -245,7 +245,7 @@ async function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 async function confirmForeignReplace(existingEntry, force) {
   if (force || !isTTY) return true;
-  process.stdout.write(c(COLOR.yellow, '⚠  Existing permission_prompt hook detected (not from claude-notifier):') + '\n');
+  process.stdout.write(c(COLOR.yellow, '⚠  Existing permission_prompt hook detected (not from claude-nudge):') + '\n');
   process.stdout.write(c(COLOR.dim, '   ' + JSON.stringify(existingEntry, null, 2).replace(/\n/g, '\n   ')) + '\n');
   process.stdout.write(`It will be replaced. Backup will be written first. Press Ctrl-C within ${COUNTDOWN_SECONDS}s to abort, or re-run with --force to skip this prompt.\n`);
   for (let i = COUNTDOWN_SECONDS; i > 0; i--) {
@@ -293,11 +293,11 @@ async function cmdInstall(p, flags) {
   atomicWrite(p.settings, afterStr, 0o644);
 
   const box = [
-    c(COLOR.green, '✓ claude-notifier installed'),
+    c(COLOR.green, '✓ claude-nudge installed'),
     `  hook    : ~/.claude/settings.json  (Notification.${MATCHER}, ${action})`,
     `  runner  : ${p.runner}`,
     `  backup  : ${backupPath || '(no previous settings to back up)'}`,
-    `  next    : ${c(COLOR.cyan, 'npx claude-notifier --test')}  ${c(COLOR.dim, '(fires a sample notification)')}`,
+    `  next    : ${c(COLOR.cyan, 'npx claude-nudge --test')}  ${c(COLOR.dim, '(fires a sample notification)')}`,
   ];
   process.stdout.write(box.join('\n') + '\n');
 }
@@ -329,7 +329,7 @@ async function cmdUninstall(p, flags) {
   }
 
   const lines = [
-    c(COLOR.green, '✓ claude-notifier uninstalled'),
+    c(COLOR.green, '✓ claude-nudge uninstalled'),
     `  hook    : ${removed ? 'removed' : '(not found — nothing to remove)'}`,
     `  runner  : ${p.runnerDir} removed`,
     `  backup  : ${flags.keepBackups ? `retained at ${p.backupDir}` : 'removed (use --keep-backups to retain next time)'}`,
@@ -342,10 +342,10 @@ async function cmdUninstall(p, flags) {
 
 function cmdTest(p) {
   if (!fs.existsSync(p.runner)) {
-    fail('Runner not installed yet. Run `npx claude-notifier` first.');
+    fail('Runner not installed yet. Run `npx claude-nudge` first.');
   }
   const payload = JSON.stringify({
-    message: 'Test notification — claude-notifier is working',
+    message: 'Test notification — claude-nudge is working',
     cwd: process.cwd(),
   });
   try {
@@ -364,13 +364,13 @@ function check(label, ok, hint) {
 }
 
 function cmdDoctor(p) {
-  process.stdout.write(c(COLOR.cyan, 'claude-notifier doctor') + '\n');
+  process.stdout.write(c(COLOR.cyan, 'claude-nudge doctor') + '\n');
   let allOk = true;
   allOk = check(`platform is macOS`, process.platform === 'darwin', `detected ${process.platform}`) && allOk;
   allOk = check(`node >= 18`, Number(process.versions.node.split('.')[0]) >= 18, `detected ${process.versions.node}`) && allOk;
 
   const settingsExists = fs.existsSync(p.settings);
-  allOk = check(`~/.claude/settings.json exists`, settingsExists, 'run `npx claude-notifier` to create') && allOk;
+  allOk = check(`~/.claude/settings.json exists`, settingsExists, 'run `npx claude-nudge` to create') && allOk;
 
   if (settingsExists) {
     let settings;
@@ -379,12 +379,12 @@ function cmdDoctor(p) {
 
     const arr = settings.hooks && Array.isArray(settings.hooks.Notification) ? settings.hooks.Notification : [];
     const ours = arr.find((e) => e && e.matcher === MATCHER && isOurHookEntry(e));
-    allOk = check(`hook entry present (Notification.${MATCHER} → claude-notifier)`, !!ours, 'not installed; run `npx claude-notifier`') && allOk;
+    allOk = check(`hook entry present (Notification.${MATCHER} → claude-nudge)`, !!ours, 'not installed; run `npx claude-nudge`') && allOk;
 
     if (ours) {
       const cmd = ours.hooks[0].command;
       const runnerExists = fs.existsSync(cmd);
-      allOk = check(`runner path exists: ${cmd}`, runnerExists, 'reinstall with `npx claude-notifier`') && allOk;
+      allOk = check(`runner path exists: ${cmd}`, runnerExists, 'reinstall with `npx claude-nudge`') && allOk;
       if (runnerExists) {
         const mode = fs.statSync(cmd).mode & 0o777;
         allOk = check(`runner is executable`, (mode & 0o111) !== 0, `mode is ${mode.toString(8)}`) && allOk;

@@ -1,10 +1,10 @@
 {
-  "name": "claude-notifier",
+  "name": "claude-nudge",
   "version": "0.1.0",
   "description": "macOS notification hook for Claude Code CLI — pings you when Claude needs your input",
   "bin": {
-    "claude-notifier": "./bin/install.js",
-    "claude-notifier-run": "./bin/notify.js"
+    "claude-nudge": "./bin/install.js",
+    "claude-nudge-run": "./bin/notify.js"
   },
   "files": [
     "bin",
@@ -35,10 +35,10 @@
   "author": "Aashutosh Prakash <aashutosh.code@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aashutosh-prakash/claude-notifier.git"
+    "url": "git+https://github.com/aashutosh-prakash/claude-nudge.git"
   },
   "bugs": {
-    "url": "https://github.com/aashutosh-prakash/claude-notifier/issues"
+    "url": "https://github.com/aashutosh-prakash/claude-nudge/issues"
   },
-  "homepage": "https://github.com/aashutosh-prakash/claude-notifier#readme"
+  "homepage": "https://github.com/aashutosh-prakash/claude-nudge#readme"
 }

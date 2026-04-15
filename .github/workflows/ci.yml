@@ -37,13 +37,13 @@ jobs:
         run: |
           npm pack
           ls -la *.tgz
-          tar -tzf claude-notifier-*.tgz | sort
+          tar -tzf claude-nudge-*.tgz | sort
 
       - name: assert no lifecycle scripts in published package
         run: |
           # Extract package.json from the tarball and verify no lifecycle hooks.
           mkdir -p /tmp/pkg-inspect
-          tar -xzf claude-notifier-*.tgz -C /tmp/pkg-inspect
+          tar -xzf claude-nudge-*.tgz -C /tmp/pkg-inspect
           cat /tmp/pkg-inspect/package/package.json
           node -e "
             const pkg = require('/tmp/pkg-inspect/package/package.json');

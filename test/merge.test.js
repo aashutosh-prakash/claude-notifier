@@ -16,7 +16,7 @@ const {
   RUNNER_MARKER,
 } = require('../bin/install.js');
 
-const RUNNER = `/Users/test/.claude/claude-notifier/notify.js`;
+const RUNNER = `/Users/test/.claude/claude-nudge/notify.js`;
 const ourEntry = () => buildOurEntry(RUNNER);
 
 const loadFixture = (name) =>
