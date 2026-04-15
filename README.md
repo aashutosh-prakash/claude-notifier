@@ -19,6 +19,14 @@ That's it. The installer:
 2. Copies the runner to `~/.claude/claude-nudge/notify.js` (stable path, survives `npm` cache cleanup).
 3. Backs up your prior `settings.json` to `~/.claude/.claude-nudge-backups/` (mode `0600`, 5 most recent kept).
 
+## Update
+
+`npx` caches packages, so `npx claude-nudge` may run a stale version. Pin `@latest` to force a fresh fetch and re-copy the runner:
+
+```bash
+npx claude-nudge@latest
+```
+
 ## Uninstall
 
 ```bash
