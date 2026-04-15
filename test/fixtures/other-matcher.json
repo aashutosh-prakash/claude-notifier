@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "idle",
+        "hooks": [
+          { "type": "command", "command": "/usr/local/bin/idle-notify" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "log-bash" }] }
+    ]
+  },
+  "statusLine": { "type": "command", "command": "claude-statusline" }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "claude-notifier",
+  "version": "0.1.0",
+  "description": "macOS notification hook for Claude Code CLI — pings you when Claude needs your input",
+  "bin": {
+    "claude-notifier": "./bin/install.js",
+    "claude-notifier-run": "./bin/notify.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "prepublishOnly": "npm test && node bin/install.js --dry-run"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "claude-code-hook",
+    "notification",
+    "permission-prompt",
+    "mac",
+    "macos",
+    "osascript",
+    "apple-notification",
+    "cli-hook"
+  ],
+  "license": "MIT",
+  "author": "Aashutosh Prakash <aashutosh.code@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aashutosh-prakash/claude-notifier.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aashutosh-prakash/claude-notifier/issues"
+  },
+  "homepage": "https://github.com/aashutosh-prakash/claude-notifier#readme"
+}

@@ -1,0 +1,9 @@
+node_modules/
+*.tgz
+.DS_Store
+*.log
+.env
+.env.local
+coverage/
+.claude/
+PLAN.md

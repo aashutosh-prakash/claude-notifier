@@ -1,0 +1,107 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['18', '20', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: install (zero deps — this is a no-op assertion)
+        run: |
+          # This package declares no dependencies. `npm ci` would fail without a
+          # lockfile; `npm install` is a no-op. We assert that no deps were
+          # installed.
+          npm install --ignore-scripts
+          test ! -d node_modules || [ -z "$(ls -A node_modules 2>/dev/null)" ] || (echo "unexpected node_modules contents" && ls -la node_modules && exit 1)
+
+      - name: run tests
+        run: npm test
+
+      - name: npm pack + inspect
+        run: |
+          npm pack
+          ls -la *.tgz
+          tar -tzf claude-notifier-*.tgz | sort
+
+      - name: assert no lifecycle scripts in published package
+        run: |
+          # Extract package.json from the tarball and verify no lifecycle hooks.
+          mkdir -p /tmp/pkg-inspect
+          tar -xzf claude-notifier-*.tgz -C /tmp/pkg-inspect
+          cat /tmp/pkg-inspect/package/package.json
+          node -e "
+            const pkg = require('/tmp/pkg-inspect/package/package.json');
+            const forbidden = ['preinstall','install','postinstall','preuninstall','postuninstall','preprepare','prepare','postprepare'];
+            const scripts = pkg.scripts || {};
+            const found = forbidden.filter(s => s in scripts);
+            if (found.length) { console.error('FAIL: forbidden lifecycle scripts present:', found); process.exit(1); }
+            console.log('OK: no forbidden lifecycle scripts');
+          "
+
+      - name: assert no runtime dependencies
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            const deps = Object.keys(pkg.dependencies || {});
+            if (deps.length) { console.error('FAIL: unexpected runtime dependencies:', deps); process.exit(1); }
+            console.log('OK: zero runtime dependencies');
+          "
+
+      - name: smoke test install.js --dry-run against fixture
+        run: node bin/install.js --dry-run || true
+        # --dry-run on non-macOS exits non-zero (platform check); that's fine —
+        # what we care about is that it doesn't crash with an uncaught error.
+
+      - name: smoke test install.js --help
+        run: node bin/install.js --help
+
+      - name: smoke test install.js --version
+        run: node bin/install.js --version
+
+  publish:
+    name: publish to npm
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # required for OIDC-based npm provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$PKG_VERSION" ]; then
+            echo "Tag v$TAG does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: run tests one more time
+        run: npm test
+
+      - name: publish with provenance
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

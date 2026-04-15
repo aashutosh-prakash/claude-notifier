@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          { "type": "command", "command": "/usr/local/bin/my-custom-notifier" }
+        ]
+      }
+    ]
+  }
+}
