@@ -408,7 +408,11 @@ async function main() {
   if (flags.help) { printHelp(); return; }
   if (flags.version) { process.stdout.write(PKG.version + '\n'); return; }
 
-  ensureMac();
+  if (flags.dryRun && process.platform !== 'darwin') {
+    process.stdout.write(c(COLOR.yellow, `⚠  --dry-run on non-macOS (${process.platform}) — showing what would happen on macOS\n`));
+  } else {
+    ensureMac();
+  }
   const home = ensureHomedirSafe();
   const p = paths(home);
 
