@@ -16,7 +16,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "prepublishOnly": "npm test && node bin/install.js --dry-run"
   },
   "keywords": [
