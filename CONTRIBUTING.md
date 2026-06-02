@@ -11,7 +11,7 @@ In scope:
 
 Out of scope (for now):
 - Linux / Windows support (may reconsider — open an issue to discuss)
-- Customization via CLI flags (planned for v0.2 via `~/.claude/claude-nudge.json`)
+- Customization via CLI flags (planned for a future release via `~/.claude/claude-nudge.json`)
 - Integrations with non-macOS notification systems
 
 ## Development

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-const { sanitize, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN } = require('../bin/notify.js');
+const { sanitize, resolveEvent, EVENT_DEFAULTS, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN } = require('../bin/notify.js');
 const NOTIFY = path.join(__dirname, '..', 'bin', 'notify.js');
 
 // On non-macOS (CI Linux), osascript is absent; the runner's try/catch swallows
@@ -90,5 +90,28 @@ test('notify.js: exits 0 with oversized message (>200 chars)', () => {
 
 test('notify.js: exits 0 when payload has no message or cwd', () => {
   const r = runNotify('{}');
+  assert.equal(r.status, 0);
+});
+
+test('resolveEvent: maps known hook events', () => {
+  assert.equal(resolveEvent({ hook_event_name: 'Notification' }), 'Notification');
+  assert.equal(resolveEvent({ hook_event_name: 'Stop' }), 'Stop');
+});
+
+test('resolveEvent: falls back to Notification for unknown or missing', () => {
+  assert.equal(resolveEvent({}), 'Notification');
+  assert.equal(resolveEvent({ hook_event_name: 'UnknownEvent' }), 'Notification');
+  assert.equal(resolveEvent({ hook_event_name: 'SubagentStop' }), 'Notification');
+  assert.equal(resolveEvent({ hook_event_name: 42 }), 'Notification');
+});
+
+test('EVENT_DEFAULTS: Stop uses a different message and sound than Notification', () => {
+  assert.notEqual(EVENT_DEFAULTS.Stop.message, EVENT_DEFAULTS.Notification.message);
+  assert.notEqual(EVENT_DEFAULTS.Stop.sound, EVENT_DEFAULTS.Notification.sound);
+  assert.equal(EVENT_DEFAULTS.Stop.message, 'Task complete');
+});
+
+test('notify.js: exits 0 for Stop payload (no message field)', () => {
+  const r = runNotify(JSON.stringify({ hook_event_name: 'Stop', cwd: '/tmp/proj' }));
   assert.equal(r.status, 0);
 });

@@ -8,30 +8,51 @@ const path = require('node:path');
 const {
   mergeHook,
   removeHook,
+  mergeAllHooks,
+  removeAllHooks,
   isOurHookEntry,
   buildOurEntry,
   findForeignEntry,
+  findAllForeignEntries,
   parseArgs,
   MATCHER,
   RUNNER_MARKER,
+  HOOK_CONFIGS,
 } = require('../bin/install.js');
 
 const RUNNER = `/Users/test/.claude/claude-nudge/notify.js`;
-const ourEntry = () => buildOurEntry(RUNNER);
+const notificationEntry = () => buildOurEntry(RUNNER, MATCHER);
+const stopEntry = () => buildOurEntry(RUNNER, null);
 
 const loadFixture = (name) =>
   JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8'));
 
-test('buildOurEntry produces the expected shape', () => {
-  const e = ourEntry();
+test('HOOK_CONFIGS: installs both permission_prompt and Stop', () => {
+  const events = HOOK_CONFIGS.map((c) => c.event).sort();
+  assert.deepEqual(events, ['Notification', 'Stop']);
+  const withMatcher = HOOK_CONFIGS.find((c) => c.event === 'Notification');
+  const noMatcher = HOOK_CONFIGS.find((c) => c.event === 'Stop');
+  assert.equal(withMatcher.matcher, MATCHER);
+  assert.equal(noMatcher.matcher, null);
+});
+
+test('buildOurEntry: Notification entry has matcher field', () => {
+  const e = notificationEntry();
   assert.equal(e.matcher, MATCHER);
   assert.equal(e.hooks.length, 1);
   assert.equal(e.hooks[0].type, 'command');
   assert.ok(e.hooks[0].command.includes(RUNNER_MARKER));
 });
 
-test('isOurHookEntry: ours is recognized', () => {
-  assert.equal(isOurHookEntry(ourEntry()), true);
+test('buildOurEntry: Stop entry omits matcher field', () => {
+  const e = stopEntry();
+  assert.ok(!('matcher' in e));
+  assert.ok(e.hooks[0].command.includes(RUNNER_MARKER));
+});
+
+test('isOurHookEntry: ours is recognized for both entry shapes', () => {
+  assert.equal(isOurHookEntry(notificationEntry()), true);
+  assert.equal(isOurHookEntry(stopEntry()), true);
 });
 
 test('isOurHookEntry: foreign is rejected', () => {
@@ -42,42 +63,76 @@ test('isOurHookEntry: foreign is rejected', () => {
   assert.equal(isOurHookEntry(foreign), false);
 });
 
-test('mergeHook: appends into empty settings', () => {
-  const { next, action } = mergeHook({}, ourEntry());
+test('mergeHook: appends Notification into empty settings', () => {
+  const { next, action } = mergeHook({}, 'Notification', MATCHER, notificationEntry());
   assert.equal(action, 'appended');
   assert.equal(next.hooks.Notification.length, 1);
   assert.equal(next.hooks.Notification[0].matcher, MATCHER);
 });
 
+test('mergeHook: appends Stop into empty settings (no matcher)', () => {
+  const { next, action } = mergeHook({}, 'Stop', null, stopEntry());
+  assert.equal(action, 'appended');
+  assert.equal(next.hooks.Stop.length, 1);
+  assert.ok(!('matcher' in next.hooks.Stop[0]));
+});
+
+test('mergeHook: Stop replaces ours by command marker (idempotent)', () => {
+  const first = mergeHook({}, 'Stop', null, stopEntry()).next;
+  const { next, action } = mergeHook(first, 'Stop', null, stopEntry());
+  assert.equal(action, 'replaced-ours');
+  assert.equal(next.hooks.Stop.length, 1);
+});
+
+test('mergeHook: Stop coexists with pre-existing foreign Stop entries (appends)', () => {
+  const base = {
+    hooks: {
+      Stop: [{ hooks: [{ type: 'command', command: '/usr/local/bin/other-stop' }] }],
+    },
+  };
+  const { next, action } = mergeHook(base, 'Stop', null, stopEntry());
+  assert.equal(action, 'appended');
+  assert.equal(next.hooks.Stop.length, 2);
+});
+
+test('mergeAllHooks: installs both hooks into empty settings', () => {
+  const { next, actions } = mergeAllHooks({}, RUNNER);
+  assert.equal(actions.length, 2);
+  assert.ok(actions.every((a) => a.action === 'appended'));
+  assert.equal(next.hooks.Notification.length, 1);
+  assert.equal(next.hooks.Stop.length, 1);
+});
+
+test('mergeAllHooks: idempotent — second install replaces our own', () => {
+  const first = mergeAllHooks({}, RUNNER).next;
+  const { next, actions } = mergeAllHooks(first, RUNNER);
+  assert.ok(actions.every((a) => a.action === 'replaced-ours'));
+  assert.equal(next.hooks.Notification.length, 1);
+  assert.equal(next.hooks.Stop.length, 1);
+});
+
 test('mergeHook: preserves unrelated top-level keys', () => {
   const before = loadFixture('with-statusline.json');
-  const { next } = mergeHook(before, ourEntry());
+  const { next } = mergeAllHooks(before, RUNNER);
   assert.deepEqual(next.statusLine, before.statusLine);
   assert.deepEqual(next.permissions, before.permissions);
 });
 
 test('mergeHook: preserves other Notification matchers (non-clobbering)', () => {
   const before = loadFixture('other-matcher.json');
-  const { next, action } = mergeHook(before, ourEntry());
-  assert.equal(action, 'appended');
+  const { next, actions } = mergeAllHooks(before, RUNNER);
+  const notifAction = actions.find((a) => a.event === 'Notification');
+  assert.equal(notifAction.action, 'appended');
   assert.equal(next.hooks.Notification.length, 2);
   const idle = next.hooks.Notification.find((e) => e.matcher === 'idle');
   assert.ok(idle, 'idle matcher should survive');
   assert.equal(idle.hooks[0].command, '/usr/local/bin/idle-notify');
-  // Other hook types also survive
   assert.ok(next.hooks.PreToolUse);
-});
-
-test('mergeHook: replaces our own entry (idempotent)', () => {
-  const first = mergeHook({}, ourEntry()).next;
-  const { next, action } = mergeHook(first, ourEntry());
-  assert.equal(action, 'replaced-ours');
-  assert.equal(next.hooks.Notification.length, 1);
 });
 
 test('mergeHook: flags foreign permission_prompt as replaced-foreign', () => {
   const before = loadFixture('foreign-matcher.json');
-  const { next, action } = mergeHook(before, ourEntry());
+  const { next, action } = mergeHook(before, 'Notification', MATCHER, notificationEntry());
   assert.equal(action, 'replaced-foreign');
   assert.equal(next.hooks.Notification.length, 1);
   assert.ok(isOurHookEntry(next.hooks.Notification[0]));
@@ -86,50 +141,82 @@ test('mergeHook: flags foreign permission_prompt as replaced-foreign', () => {
 test('mergeHook: does not mutate input', () => {
   const before = loadFixture('with-statusline.json');
   const snapshot = JSON.stringify(before);
-  mergeHook(before, ourEntry());
+  mergeAllHooks(before, RUNNER);
   assert.equal(JSON.stringify(before), snapshot);
 });
 
-test('findForeignEntry: detects foreign but not ours', () => {
+test('findForeignEntry: detects foreign permission_prompt but not ours', () => {
   assert.ok(findForeignEntry(loadFixture('foreign-matcher.json')));
-  const afterOurs = mergeHook({}, ourEntry()).next;
+  const afterOurs = mergeAllHooks({}, RUNNER).next;
   assert.equal(findForeignEntry(afterOurs), null);
   assert.equal(findForeignEntry({}), null);
 });
 
-test('removeHook: removes only our entry, preserves others', () => {
+test('findForeignEntry: returns null for Stop (no matcher-based collision)', () => {
+  const base = {
+    hooks: {
+      Stop: [{ hooks: [{ type: 'command', command: '/usr/local/bin/other-stop' }] }],
+    },
+  };
+  assert.equal(findForeignEntry(base, 'Stop', null), null);
+});
+
+test('findAllForeignEntries: reports Notification foreign only', () => {
+  const foreigns = findAllForeignEntries(loadFixture('foreign-matcher.json'));
+  assert.equal(foreigns.length, 1);
+  assert.equal(foreigns[0].event, 'Notification');
+  assert.equal(foreigns[0].matcher, MATCHER);
+});
+
+test('removeAllHooks: removes both our entries, preserves others', () => {
   const base = loadFixture('other-matcher.json');
-  const withOurs = mergeHook(base, ourEntry()).next;
-  const { next, removed } = removeHook(withOurs);
+  const withOurs = mergeAllHooks(base, RUNNER).next;
+  const { next, removed } = removeAllHooks(withOurs);
   assert.equal(removed, true);
   assert.ok(next.hooks.Notification);
   assert.equal(next.hooks.Notification.length, 1);
   assert.equal(next.hooks.Notification[0].matcher, 'idle');
   assert.ok(next.hooks.PreToolUse);
   assert.ok(next.statusLine);
+  assert.equal(next.hooks.Stop, undefined);
 });
 
-test('removeHook: does NOT remove foreign permission_prompt', () => {
+test('removeAllHooks: preserves foreign Stop hooks', () => {
+  const base = {
+    hooks: {
+      Stop: [{ hooks: [{ type: 'command', command: '/usr/local/bin/other-stop' }] }],
+    },
+  };
+  const withOurs = mergeAllHooks(base, RUNNER).next;
+  assert.equal(withOurs.hooks.Stop.length, 2);
+  const { next, removed } = removeAllHooks(withOurs);
+  assert.equal(removed, true);
+  assert.equal(next.hooks.Stop.length, 1);
+  assert.equal(next.hooks.Stop[0].hooks[0].command, '/usr/local/bin/other-stop');
+});
+
+test('removeAllHooks: does NOT remove foreign permission_prompt', () => {
   const foreign = loadFixture('foreign-matcher.json');
-  const { next, removed } = removeHook(foreign);
+  const { next, removed } = removeAllHooks(foreign);
   assert.equal(removed, false);
   assert.equal(next.hooks.Notification.length, 1);
 });
 
-test('removeHook: cleans up empty Notification array and empty hooks object', () => {
-  const settings = mergeHook({}, ourEntry()).next;
-  const { next, removed } = removeHook(settings);
+test('removeAllHooks: cleans up empty arrays and empty hooks object', () => {
+  const settings = mergeAllHooks({}, RUNNER).next;
+  const { next, removed } = removeAllHooks(settings);
   assert.equal(removed, true);
   assert.equal(next.hooks, undefined);
 });
 
-test('removeHook: preserves other hooks keys when Notification becomes empty', () => {
+test('removeAllHooks: preserves other hooks keys', () => {
   const base = { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [] }] } };
-  const withOurs = mergeHook(base, ourEntry()).next;
-  const { next, removed } = removeHook(withOurs);
+  const withOurs = mergeAllHooks(base, RUNNER).next;
+  const { next, removed } = removeAllHooks(withOurs);
   assert.equal(removed, true);
   assert.ok(next.hooks.PreToolUse);
   assert.equal(next.hooks.Notification, undefined);
+  assert.equal(next.hooks.Stop, undefined);
 });
 
 test('parseArgs: defaults to install', () => {

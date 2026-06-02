@@ -1,8 +1,13 @@
 # claude-nudge
 
-> macOS notifications for [Claude Code](https://claude.com/claude-code) permission prompts — so you don't have to watch the terminal.
+> macOS notifications for [Claude Code](https://claude.com/claude-code) — fires when Claude needs your input **and** when a task finishes, so you don't have to watch the terminal.
 
-**macOS only.** When Claude needs your input (to run a command, write a file, etc.), a native macOS notification fires with the Sosumi chime, the project directory as subtitle, and the permission message as body.
+**macOS only.** Two nudges are installed by default:
+
+- **Permission prompt** — Sosumi chime, body is the permission message (e.g. "Allow Bash `rm -rf`?"). Fires on the `Notification.permission_prompt` hook.
+- **Task complete** — Glass chime, body is `Task complete`. Fires on the `Stop` hook when Claude finishes its response.
+
+Both show `Claude Code` as the title and the current project directory as the subtitle.
 
 ---
 
@@ -15,8 +20,8 @@ npx claude-nudge --test      # fire a sample notification + grant macOS permissi
 
 That's it. The installer:
 
-1. Adds a `Notification` hook to `~/.claude/settings.json` under the `permission_prompt` matcher.
-2. Copies the runner to `~/.claude/claude-nudge/notify.js` (stable path, survives `npm` cache cleanup).
+1. Adds a `Notification` hook (matcher `permission_prompt`) **and** a `Stop` hook to `~/.claude/settings.json`.
+2. Copies the runner to `~/.claude/claude-nudge/notify.js` (stable path, survives `npm` cache cleanup). The runner picks the right message + sound based on the hook event it receives.
 3. Backs up your prior `settings.json` to `~/.claude/.claude-nudge-backups/` (mode `0600`, 5 most recent kept).
 
 ## Update
@@ -38,11 +43,11 @@ npx claude-nudge --uninstall --keep-backups # keep the backup directory
 
 | Command | Purpose |
 |---|---|
-| `npx claude-nudge` | Install the hook |
+| `npx claude-nudge` | Install both hooks |
 | `npx claude-nudge --test` | Fire a sample notification (also triggers the one-time macOS permission prompt) |
-| `npx claude-nudge --doctor` | Diagnose install health (platform, settings.json, runner, permissions) |
+| `npx claude-nudge --doctor` | Diagnose install health (platform, settings.json, runner, osascript) |
 | `npx claude-nudge --dry-run` | Show proposed changes without writing anything |
-| `npx claude-nudge --uninstall` | Remove the hook and the runner directory |
+| `npx claude-nudge --uninstall` | Remove both hooks and the runner directory |
 | `npx claude-nudge --force` | Skip the 3-second abort window when replacing an existing foreign `permission_prompt` hook |
 | `npx claude-nudge --help` | Show help |
 | `npx claude-nudge --version` | Print version |
@@ -64,12 +69,26 @@ npx claude-nudge --uninstall --keep-backups # keep the backup directory
 +           }
 +         ]
 +       }
++     ],
++     "Stop": [
++       {
++         "hooks": [
++           {
++             "type": "command",
++             "command": "/Users/<you>/.claude/claude-nudge/notify.js"
++           }
++         ]
++       }
 +     ]
 +   }
   }
 ```
 
-If you already have other `Notification` matchers, **they are preserved**. If you already have a `permission_prompt` entry that isn't from claude-nudge, the installer warns you and gives a 3-second window to abort (or use `--force`).
+If you already have other `Notification` matchers or other `Stop` hooks, **they are preserved**. If you already have a `permission_prompt` entry that isn't from claude-nudge, the installer warns you and gives a 3-second window to abort (or use `--force`). Foreign `Stop` entries are never replaced — claude-nudge simply appends its own alongside them.
+
+### Note on the Stop hook
+
+The `Stop` hook fires at the end of every main-agent turn, so you will get a "Task complete" notification after each response — including short back-and-forth exchanges. If that's too noisy, uninstall with `--uninstall` (which removes both hooks) or edit `~/.claude/settings.json` by hand to drop just the `Stop` entry.
 
 ## macOS permission prompt
 
@@ -84,7 +103,7 @@ Notifications are fired via `osascript`, which macOS always attributes to **Scri
 - The icon badge on the notification is the Script Editor scroll icon.
 - **Clicking the notification opens Script Editor with an Untitled document.** Don't click — the notification is purely informational.
 
-This is a macOS platform behavior, not a bug in claude-nudge. The only way to change attribution is to fire notifications via `UNUserNotificationCenter` from a properly identified app bundle, which requires a compiled Swift or Objective-C binary. Planned for v0.2 — will compile at install time if Xcode Command Line Tools (`swift`) are available, fall back to osascript otherwise.
+This is a macOS platform behavior, not a bug in claude-nudge. The only way to change attribution is to fire notifications via `UNUserNotificationCenter` from a properly identified app bundle, which requires a notarized native binary — an ad-hoc-signed AppleScript applet (`osacompile`) is silently rejected by macOS 13+ Notification Center for new bundles, so we keep the `osascript` path which works out of the box.
 
 ## Privacy
 

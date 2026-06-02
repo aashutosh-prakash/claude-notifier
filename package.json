@@ -1,7 +1,7 @@
 {
   "name": "claude-nudge",
   "version": "0.1.0",
-  "description": "macOS notification hook for Claude Code CLI — pings you when Claude needs your input",
+  "description": "macOS notification hook for Claude Code CLI — pings you when Claude needs your input or when a task completes",
   "bin": {
     "claude-nudge": "./bin/install.js",
     "claude-nudge-run": "./bin/notify.js"

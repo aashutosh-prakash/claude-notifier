@@ -13,6 +13,14 @@ const RUNNER_MARKER = 'claude-nudge/notify.js';
 const KEEP_BACKUPS = 5;
 const COUNTDOWN_SECONDS = 3;
 
+// Hooks we install. `matcher: null` means the event has no matcher-based
+// dedup key (Stop fires once per agent turn); we identify our own entry
+// solely via RUNNER_MARKER in the command path.
+const HOOK_CONFIGS = [
+  { event: 'Notification', matcher: MATCHER, label: 'permission prompts' },
+  { event: 'Stop', matcher: null, label: 'task complete' },
+];
+
 const COLOR = {
   reset: '\x1b[0m',
   dim: '\x1b[2m',
@@ -59,8 +67,8 @@ function printHelp() {
   process.stdout.write(`claude-nudge — macOS notification hook for Claude Code
 
 Usage:
-  npx claude-nudge              Install the Notification hook into ~/.claude/settings.json
-  npx claude-nudge --uninstall  Remove the hook (and runner directory)
+  npx claude-nudge              Install Notification (permission) + Stop (task-complete) hooks into ~/.claude/settings.json
+  npx claude-nudge --uninstall  Remove both hooks (and runner directory)
   npx claude-nudge --test       Fire a sample notification to verify install
   npx claude-nudge --doctor     Diagnose install health
   npx claude-nudge --dry-run    Show what would change without writing
@@ -187,45 +195,75 @@ function isOurHookEntry(entry) {
   return entry.hooks.some((h) => h && typeof h.command === 'string' && h.command.includes(RUNNER_MARKER));
 }
 
-function buildOurEntry(runnerPath) {
-  return {
-    matcher: MATCHER,
-    hooks: [
-      { type: 'command', command: runnerPath },
-    ],
-  };
+function buildOurEntry(runnerPath, matcher) {
+  const entry = {};
+  if (matcher != null) entry.matcher = matcher;
+  entry.hooks = [{ type: 'command', command: runnerPath }];
+  return entry;
 }
 
-function mergeHook(settings, ourEntry) {
+function mergeHook(settings, event, matcher, ourEntry) {
   const next = JSON.parse(JSON.stringify(settings || {}));
   if (!next.hooks || typeof next.hooks !== 'object') next.hooks = {};
-  if (!Array.isArray(next.hooks.Notification)) next.hooks.Notification = [];
-  const arr = next.hooks.Notification;
-  const idx = arr.findIndex((e) => e && e.matcher === MATCHER);
-  let action;
+  if (!Array.isArray(next.hooks[event])) next.hooks[event] = [];
+  const arr = next.hooks[event];
+
+  if (matcher != null) {
+    const idx = arr.findIndex((e) => e && e.matcher === matcher);
+    if (idx === -1) {
+      arr.push(ourEntry);
+      return { next, action: 'appended' };
+    }
+    const wasOurs = isOurHookEntry(arr[idx]);
+    arr[idx] = ourEntry;
+    return { next, action: wasOurs ? 'replaced-ours' : 'replaced-foreign' };
+  }
+
+  const idx = arr.findIndex((e) => isOurHookEntry(e));
   if (idx === -1) {
     arr.push(ourEntry);
-    action = 'appended';
-  } else if (isOurHookEntry(arr[idx])) {
-    arr[idx] = ourEntry;
-    action = 'replaced-ours';
-  } else {
-    arr[idx] = ourEntry;
-    action = 'replaced-foreign';
+    return { next, action: 'appended' };
   }
-  return { next, action };
+  arr[idx] = ourEntry;
+  return { next, action: 'replaced-ours' };
 }
 
-function removeHook(settings) {
+function removeHook(settings, event, matcher) {
   const next = JSON.parse(JSON.stringify(settings || {}));
-  if (!next.hooks || !Array.isArray(next.hooks.Notification)) return { next, removed: false };
-  const arr = next.hooks.Notification;
+  if (!next.hooks || !Array.isArray(next.hooks[event])) return { next, removed: false };
+  const arr = next.hooks[event];
   const before = arr.length;
-  next.hooks.Notification = arr.filter((e) => !(e && e.matcher === MATCHER && isOurHookEntry(e)));
-  const removed = next.hooks.Notification.length < before;
-  if (next.hooks.Notification.length === 0) delete next.hooks.Notification;
+  const keep = matcher != null
+    ? (e) => !(e && e.matcher === matcher && isOurHookEntry(e))
+    : (e) => !isOurHookEntry(e);
+  next.hooks[event] = arr.filter(keep);
+  const removed = next.hooks[event].length < before;
+  if (next.hooks[event].length === 0) delete next.hooks[event];
   if (next.hooks && Object.keys(next.hooks).length === 0) delete next.hooks;
   return { next, removed };
+}
+
+function mergeAllHooks(settings, runnerPath) {
+  let current = settings;
+  const actions = [];
+  for (const cfg of HOOK_CONFIGS) {
+    const entry = buildOurEntry(runnerPath, cfg.matcher);
+    const { next, action } = mergeHook(current, cfg.event, cfg.matcher, entry);
+    current = next;
+    actions.push({ event: cfg.event, matcher: cfg.matcher, label: cfg.label, action });
+  }
+  return { next: current, actions };
+}
+
+function removeAllHooks(settings) {
+  let current = settings;
+  let anyRemoved = false;
+  for (const cfg of HOOK_CONFIGS) {
+    const { next, removed } = removeHook(current, cfg.event, cfg.matcher);
+    current = next;
+    if (removed) anyRemoved = true;
+  }
+  return { next: current, removed: anyRemoved };
 }
 
 function simpleDiff(before, after) {
@@ -243,10 +281,12 @@ function simpleDiff(before, after) {
 
 async function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-async function confirmForeignReplace(existingEntry, force) {
+async function confirmForeignReplace(foreigns, force) {
   if (force || !isTTY) return true;
-  process.stdout.write(c(COLOR.yellow, '⚠  Existing permission_prompt hook detected (not from claude-nudge):') + '\n');
-  process.stdout.write(c(COLOR.dim, '   ' + JSON.stringify(existingEntry, null, 2).replace(/\n/g, '\n   ')) + '\n');
+  for (const f of foreigns) {
+    process.stdout.write(c(COLOR.yellow, `⚠  Existing ${f.event}${f.matcher ? '.' + f.matcher : ''} hook detected (not from claude-nudge):`) + '\n');
+    process.stdout.write(c(COLOR.dim, '   ' + JSON.stringify(f.entry, null, 2).replace(/\n/g, '\n   ')) + '\n');
+  }
   process.stdout.write(`It will be replaced. Backup will be written first. Press Ctrl-C within ${COUNTDOWN_SECONDS}s to abort, or re-run with --force to skip this prompt.\n`);
   for (let i = COUNTDOWN_SECONDS; i > 0; i--) {
     process.stdout.write(`\r  continuing in ${i}s... `);
@@ -256,25 +296,34 @@ async function confirmForeignReplace(existingEntry, force) {
   return true;
 }
 
-function findForeignEntry(settings) {
-  const arr = settings && settings.hooks && Array.isArray(settings.hooks.Notification) ? settings.hooks.Notification : [];
-  const idx = arr.findIndex((e) => e && e.matcher === MATCHER);
+function findForeignEntry(settings, event = 'Notification', matcher = MATCHER) {
+  if (matcher == null) return null;
+  const arr = settings && settings.hooks && Array.isArray(settings.hooks[event]) ? settings.hooks[event] : [];
+  const idx = arr.findIndex((e) => e && e.matcher === matcher);
   if (idx === -1) return null;
   if (isOurHookEntry(arr[idx])) return null;
   return arr[idx];
+}
+
+function findAllForeignEntries(settings) {
+  const out = [];
+  for (const cfg of HOOK_CONFIGS) {
+    const foreign = findForeignEntry(settings, cfg.event, cfg.matcher);
+    if (foreign) out.push({ event: cfg.event, matcher: cfg.matcher, entry: foreign });
+  }
+  return out;
 }
 
 async function cmdInstall(p, flags) {
   ensureDir(p.claudeDir, 0o755);
   const settingsBefore = readSettings(p.settings);
 
-  const foreign = findForeignEntry(settingsBefore);
-  if (foreign) {
-    await confirmForeignReplace(foreign, flags.force);
+  const foreigns = findAllForeignEntries(settingsBefore);
+  if (foreigns.length > 0 && !flags.dryRun) {
+    await confirmForeignReplace(foreigns, flags.force);
   }
 
-  const ourEntry = buildOurEntry(p.runner);
-  const { next, action } = mergeHook(settingsBefore, ourEntry);
+  const { next, actions } = mergeAllHooks(settingsBefore, p.runner);
 
   const beforeStr = serializeSettings(settingsBefore);
   const afterStr = serializeSettings(next);
@@ -292,9 +341,13 @@ async function cmdInstall(p, flags) {
   installRunner(p);
   atomicWrite(p.settings, afterStr, 0o644);
 
+  const hookLines = actions.map((a) => {
+    const name = a.matcher ? `${a.event}.${a.matcher}` : a.event;
+    return `  hook    : ${name}  (${a.label}, ${a.action})`;
+  });
   const box = [
     c(COLOR.green, '✓ claude-nudge installed'),
-    `  hook    : ~/.claude/settings.json  (Notification.${MATCHER}, ${action})`,
+    ...hookLines,
     `  runner  : ${p.runner}`,
     `  backup  : ${backupPath || '(no previous settings to back up)'}`,
     `  next    : ${c(COLOR.cyan, 'npx claude-nudge --test')}  ${c(COLOR.dim, '(fires a sample notification)')}`,
@@ -308,7 +361,7 @@ async function cmdUninstall(p, flags) {
     return;
   }
   const settingsBefore = readSettings(p.settings);
-  const { next, removed } = removeHook(settingsBefore);
+  const { next, removed } = removeAllHooks(settingsBefore);
 
   const beforeStr = serializeSettings(settingsBefore);
   const afterStr = serializeSettings(next);
@@ -377,16 +430,24 @@ function cmdDoctor(p) {
     try { settings = JSON.parse(fs.readFileSync(p.settings, 'utf8') || '{}'); allOk = check('settings.json parses as JSON', true) && allOk; }
     catch (err) { allOk = check('settings.json parses as JSON', false, err.message) && allOk; settings = {}; }
 
-    const arr = settings.hooks && Array.isArray(settings.hooks.Notification) ? settings.hooks.Notification : [];
-    const ours = arr.find((e) => e && e.matcher === MATCHER && isOurHookEntry(e));
-    allOk = check(`hook entry present (Notification.${MATCHER} → claude-nudge)`, !!ours, 'not installed; run `npx claude-nudge`') && allOk;
+    let firstRunner = null;
+    for (const cfg of HOOK_CONFIGS) {
+      const arr = settings.hooks && Array.isArray(settings.hooks[cfg.event]) ? settings.hooks[cfg.event] : [];
+      const ours = arr.find((e) => {
+        if (!isOurHookEntry(e)) return false;
+        if (cfg.matcher != null) return e.matcher === cfg.matcher;
+        return true;
+      });
+      const name = cfg.matcher ? `${cfg.event}.${cfg.matcher}` : cfg.event;
+      allOk = check(`hook entry present (${name} → claude-nudge, ${cfg.label})`, !!ours, 'not installed; run `npx claude-nudge`') && allOk;
+      if (ours && !firstRunner) firstRunner = ours.hooks[0].command;
+    }
 
-    if (ours) {
-      const cmd = ours.hooks[0].command;
-      const runnerExists = fs.existsSync(cmd);
-      allOk = check(`runner path exists: ${cmd}`, runnerExists, 'reinstall with `npx claude-nudge`') && allOk;
+    if (firstRunner) {
+      const runnerExists = fs.existsSync(firstRunner);
+      allOk = check(`runner path exists: ${firstRunner}`, runnerExists, 'reinstall with `npx claude-nudge`') && allOk;
       if (runnerExists) {
-        const mode = fs.statSync(cmd).mode & 0o777;
+        const mode = fs.statSync(firstRunner).mode & 0o777;
         allOk = check(`runner is executable`, (mode & 0o111) !== 0, `mode is ${mode.toString(8)}`) && allOk;
       }
     }
@@ -433,12 +494,16 @@ module.exports = {
   parseArgs,
   mergeHook,
   removeHook,
+  mergeAllHooks,
+  removeAllHooks,
   isOurHookEntry,
   buildOurEntry,
   findForeignEntry,
+  findAllForeignEntries,
   serializeSettings,
   paths,
   MATCHER,
   RUNNER_MARKER,
   KEEP_BACKUPS,
+  HOOK_CONFIGS,
 };
