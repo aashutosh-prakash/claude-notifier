@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-const { sanitize, resolveEvent, EVENT_DEFAULTS, RUNNER_VERSION, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN } = require('../bin/notify.js');
+const { sanitize, resolveEvent, decorateMessage, EVENT_DEFAULTS, RUNNER_VERSION, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN } = require('../bin/notify.js');
 const NOTIFY = path.join(__dirname, '..', 'bin', 'notify.js');
 
 // On non-macOS (CI Linux), osascript is absent; the runner's try/catch swallows
@@ -109,6 +109,22 @@ test('EVENT_DEFAULTS: Stop uses a different message and sound than Notification'
   assert.notEqual(EVENT_DEFAULTS.Stop.message, EVENT_DEFAULTS.Notification.message);
   assert.notEqual(EVENT_DEFAULTS.Stop.sound, EVENT_DEFAULTS.Notification.sound);
   assert.equal(EVENT_DEFAULTS.Stop.message, 'Task complete');
+});
+
+test('EVENT_DEFAULTS: each event carries a distinct emoji', () => {
+  assert.equal(EVENT_DEFAULTS.Notification.emoji, '🔔');
+  assert.equal(EVENT_DEFAULTS.Stop.emoji, '✅');
+  assert.notEqual(EVENT_DEFAULTS.Stop.emoji, EVENT_DEFAULTS.Notification.emoji);
+});
+
+test('decorateMessage: prefixes the emoji with a space', () => {
+  assert.equal(decorateMessage('✅', 'Task complete'), '✅ Task complete');
+  assert.equal(decorateMessage('🔔', 'Allow Bash'), '🔔 Allow Bash');
+});
+
+test('decorateMessage: returns the message unchanged when no emoji', () => {
+  assert.equal(decorateMessage('', 'plain'), 'plain');
+  assert.equal(decorateMessage(undefined, 'plain'), 'plain');
 });
 
 test('notify.js: exits 0 for Stop payload (no message field)', () => {

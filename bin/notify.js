@@ -14,8 +14,8 @@ const MAX_MESSAGE_LEN = 200;
 const MAX_SUBTITLE_LEN = 100;
 
 const EVENT_DEFAULTS = {
-  Notification: { message: 'Permission required', sound: 'Sosumi' },
-  Stop: { message: 'Task complete', sound: 'Glass' },
+  Notification: { message: 'Permission required', sound: 'Sosumi', emoji: '🔔' },
+  Stop: { message: 'Task complete', sound: 'Glass', emoji: '✅' },
 };
 
 // AppleScript split across separate `-e` flags so we can branch on an empty
@@ -55,6 +55,13 @@ function resolveEvent(payload) {
   return EVENT_DEFAULTS[name] ? name : 'Notification';
 }
 
+// Prepend the event emoji to the (already sanitized + clamped) body. Applied
+// after sanitize so the trusted emoji is never stripped and the untrusted text
+// stays length-bounded on its own.
+function decorateMessage(emoji, message) {
+  return emoji ? `${emoji} ${message}` : message;
+}
+
 function readStdin() {
   return new Promise((resolve) => {
     let data = '';
@@ -80,7 +87,8 @@ async function main() {
 
   const event = resolveEvent(payload);
   const defaults = EVENT_DEFAULTS[event];
-  const message = sanitize(payload.message || defaults.message, MAX_MESSAGE_LEN);
+  const rawMessage = sanitize(payload.message || defaults.message, MAX_MESSAGE_LEN);
+  const message = decorateMessage(defaults.emoji, rawMessage);
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : '';
   const subtitle = sanitize(cwd ? path.basename(cwd) : '', MAX_SUBTITLE_LEN);
 
@@ -104,6 +112,7 @@ if (require.main === module) {
 module.exports = {
   sanitize,
   resolveEvent,
+  decorateMessage,
   buildOsascriptArgs,
   SCRIPT_LINES,
   RUNNER_VERSION,
