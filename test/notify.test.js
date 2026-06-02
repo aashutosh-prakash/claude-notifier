@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-const { sanitize, resolveEvent, EVENT_DEFAULTS, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN } = require('../bin/notify.js');
+const { sanitize, resolveEvent, EVENT_DEFAULTS, RUNNER_VERSION, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN } = require('../bin/notify.js');
 const NOTIFY = path.join(__dirname, '..', 'bin', 'notify.js');
 
 // On non-macOS (CI Linux), osascript is absent; the runner's try/catch swallows
@@ -114,4 +114,8 @@ test('EVENT_DEFAULTS: Stop uses a different message and sound than Notification'
 test('notify.js: exits 0 for Stop payload (no message field)', () => {
   const r = runNotify(JSON.stringify({ hook_event_name: 'Stop', cwd: '/tmp/proj' }));
   assert.equal(r.status, 0);
+});
+
+test('RUNNER_VERSION: repo source carries the dev placeholder stamp', () => {
+  assert.equal(RUNNER_VERSION, '0.0.0-dev');
 });

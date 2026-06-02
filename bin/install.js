@@ -177,11 +177,26 @@ function rotateBackups(dir, keep) {
   }
 }
 
+// The runner is copied to ~/.claude/ verbatim, so it can't `require` our
+// package.json. We bake the version into its `RUNNER_VERSION` constant at copy
+// time; --doctor reads it back to flag a runner left stale by a package update.
+function stampRunnerVersion(source, version) {
+  return source.replace(
+    /const RUNNER_VERSION = '[^']*';/,
+    () => `const RUNNER_VERSION = '${version}';`
+  );
+}
+
+function extractRunnerVersion(source) {
+  const m = source.match(/const RUNNER_VERSION = '([^']*)';/);
+  return m ? m[1] : null;
+}
+
 function installRunner(p) {
   ensureDir(p.runnerDir, 0o755);
   const src = path.join(__dirname, 'notify.js');
-  const contents = fs.readFileSync(src);
-  fs.writeFileSync(p.runner, contents, { mode: 0o755 });
+  const stamped = stampRunnerVersion(fs.readFileSync(src, 'utf8'), PKG.version);
+  fs.writeFileSync(p.runner, stamped, { mode: 0o755 });
 }
 
 function removeRunnerDir(p) {
@@ -449,6 +464,17 @@ function cmdDoctor(p) {
       if (runnerExists) {
         const mode = fs.statSync(firstRunner).mode & 0o777;
         allOk = check(`runner is executable`, (mode & 0o111) !== 0, `mode is ${mode.toString(8)}`) && allOk;
+
+        let rv = null;
+        try { rv = extractRunnerVersion(fs.readFileSync(firstRunner, 'utf8')); } catch { /* ignore */ }
+        if (!rv || rv === '0.0.0-dev') {
+          process.stdout.write(`  ${c(COLOR.dim, '·')} ${c(COLOR.dim, `runner version: ${rv || 'unknown'} (installed before version stamping)`)}\n`);
+        } else if (rv === PKG.version) {
+          check(`runner version: ${rv} (matches package)`, true);
+        } else {
+          check(`runner version: ${rv}`, true);
+          process.stdout.write(c(COLOR.yellow, `    ⚠ package is ${PKG.version} — runner is stale; run \`npx claude-nudge@latest\` to update it`) + '\n');
+        }
       }
     }
   }
@@ -500,6 +526,8 @@ module.exports = {
   buildOurEntry,
   findForeignEntry,
   findAllForeignEntries,
+  stampRunnerVersion,
+  extractRunnerVersion,
   serializeSettings,
   paths,
   MATCHER,

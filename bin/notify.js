@@ -4,6 +4,12 @@
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
+// Stamped with the package version by install.js at copy time (see
+// stampRunnerVersion in install.js). Stays at this dev placeholder when the
+// runner is executed straight from the repo. --doctor reads it back off disk
+// to detect a stale runner after a package update.
+const RUNNER_VERSION = '0.0.0-dev';
+
 const MAX_MESSAGE_LEN = 200;
 const MAX_SUBTITLE_LEN = 100;
 
@@ -100,6 +106,7 @@ module.exports = {
   resolveEvent,
   buildOsascriptArgs,
   SCRIPT_LINES,
+  RUNNER_VERSION,
   MAX_MESSAGE_LEN,
   MAX_SUBTITLE_LEN,
   EVENT_DEFAULTS,

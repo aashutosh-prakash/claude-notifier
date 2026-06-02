@@ -14,6 +14,8 @@ const {
   buildOurEntry,
   findForeignEntry,
   findAllForeignEntries,
+  stampRunnerVersion,
+  extractRunnerVersion,
   parseArgs,
   MATCHER,
   RUNNER_MARKER,
@@ -246,4 +248,22 @@ test('parseArgs: --test / --doctor / --help / --version set their flags', () => 
   assert.equal(parseArgs(['-h']).help, true);
   assert.equal(parseArgs(['--version']).version, true);
   assert.equal(parseArgs(['-v']).version, true);
+});
+
+test('stampRunnerVersion: injects the version into the runner constant', () => {
+  const src = "const RUNNER_VERSION = '0.0.0-dev';\nconst x = 1;";
+  const out = stampRunnerVersion(src, '1.2.3');
+  assert.ok(out.includes("const RUNNER_VERSION = '1.2.3';"));
+  assert.equal(extractRunnerVersion(out), '1.2.3');
+});
+
+test('extractRunnerVersion: returns null when no stamp is present', () => {
+  assert.equal(extractRunnerVersion('nothing here'), null);
+});
+
+test('stampRunnerVersion: round-trips against the real runner source', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'bin', 'notify.js'), 'utf8');
+  // repo copy carries the dev placeholder until install stamps it
+  assert.equal(extractRunnerVersion(src), '0.0.0-dev');
+  assert.equal(extractRunnerVersion(stampRunnerVersion(src, '9.9.9')), '9.9.9');
 });

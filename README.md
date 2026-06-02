@@ -32,6 +32,8 @@ That's it. The installer:
 npx claude-nudge@latest
 ```
 
+Then run `npx claude-nudge --doctor` to confirm — it reports the installed runner's version and warns if it's stale relative to the package, so you can tell at a glance whether the update actually took effect.
+
 ## Uninstall
 
 ```bash
