@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-const { sanitize, resolveEvent, decorateMessage, resolveSound, EVENT_DEFAULTS, RUNNER_VERSION, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN, MAX_SOUND_LEN } = require('../bin/notify.js');
+const { sanitize, resolveEvent, decorateMessage, resolveSound, isStopDisabled, buildOsascriptArgs, SCRIPT_LINES, EVENT_DEFAULTS, RUNNER_VERSION, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN, MAX_SOUND_LEN } = require('../bin/notify.js');
 const NOTIFY = path.join(__dirname, '..', 'bin', 'notify.js');
 
 // On non-macOS (CI Linux), osascript is absent; the runner's try/catch swallows
@@ -154,6 +154,41 @@ test('resolveSound: sanitizes and clamps the override (osascript-bound)', () => 
   assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: 'He\x00ro' }, EVENT_DEFAULTS.Stop), 'Hero');
   const long = 'x'.repeat(200);
   assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: long }, EVENT_DEFAULTS.Stop).length, MAX_SOUND_LEN);
+});
+
+test('resolveSound: silent sentinels map to "" (no sound clause)', () => {
+  for (const v of ['none', 'off', 'silent', 'mute', 'None', 'OFF']) {
+    assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: v }, EVENT_DEFAULTS.Stop), '', `${v} should silence`);
+  }
+});
+
+test('buildOsascriptArgs: empty sound omits the "sound name" clause (silent)', () => {
+  // The script must contain a branch that displays with no `sound name` when snd is "".
+  assert.ok(SCRIPT_LINES.includes('display notification msg with title "Claude Code"'));
+  assert.ok(SCRIPT_LINES.includes('if snd is "" then'));
+  // The arg vector still carries exactly three positional values after `--`.
+  const args = buildOsascriptArgs('m', 's', '');
+  const sep = args.indexOf('--');
+  assert.deepEqual(args.slice(sep + 1), ['m', 's', '']);
+});
+
+test('isStopDisabled: off/false/0/no disable; unset/on/empty keep enabled', () => {
+  for (const v of ['off', 'false', '0', 'no', 'Off', ' OFF ']) {
+    assert.equal(isStopDisabled({ CLAUDE_NUDGE_STOP: v }), true, `${JSON.stringify(v)} should disable`);
+  }
+  assert.equal(isStopDisabled({}), false);
+  assert.equal(isStopDisabled({ CLAUDE_NUDGE_STOP: 'on' }), false);
+  assert.equal(isStopDisabled({ CLAUDE_NUDGE_STOP: '' }), false);
+});
+
+test('notify.js: Stop payload with CLAUDE_NUDGE_STOP=off exits 0 (suppressed)', () => {
+  const r = spawnSync('node', [NOTIFY], {
+    input: JSON.stringify({ hook_event_name: 'Stop', cwd: '/tmp/proj' }),
+    encoding: 'utf8',
+    timeout: 5000,
+    env: { ...process.env, CLAUDE_NUDGE_STOP: 'off' },
+  });
+  assert.equal(r.status, 0);
 });
 
 test('RUNNER_VERSION: repo source carries the dev placeholder stamp', () => {

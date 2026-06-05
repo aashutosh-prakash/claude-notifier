@@ -23,6 +23,7 @@ const {
   RUNNER_MARKER,
   HOOK_CONFIGS,
   SOUND_ENV,
+  STOP_ENV,
 } = require('../bin/install.js');
 
 const RUNNER = `/Users/test/.claude/claude-nudge/notify.js`;
@@ -257,13 +258,28 @@ test('parseArgs: --list-sounds and --set-sound (both forms) set flags', () => {
   assert.equal(parseArgs(['--list-sounds']).listSounds, true);
   assert.equal(parseArgs(['--set-sound', 'Hero']).setSound, 'Hero');
   assert.equal(parseArgs(['--set-sound=Hero']).setSound, 'Hero');
+  assert.equal(parseArgs(['--set-sound', 'none']).setSound, 'none');
   // value-taking flags turn off the default install action
   assert.equal(parseArgs(['--set-sound', 'Hero']).install, false);
   assert.equal(parseArgs(['--list-sounds']).install, false);
 });
 
-test('settingsEnvStrings: returns only string-valued env keys', () => {
-  assert.deepEqual(settingsEnvStrings({ env: { A: 'x', B: 2, C: 'y', D: null } }), { A: 'x', C: 'y' });
+test('parseArgs: --disable-completion / --enable-completion set the completion flag', () => {
+  assert.equal(parseArgs(['--disable-completion']).completion, 'disable');
+  assert.equal(parseArgs(['--enable-completion']).completion, 'enable');
+  assert.equal(parseArgs(['--disable-completion']).install, false);
+  assert.equal(parseArgs([]).completion, null);
+});
+
+test('settingsEnvStrings: forwards only claude-nudge keys, dropping arbitrary/dangerous env', () => {
+  // Allowlist: only OUR_ENV_KEYS reach the child. DYLD_INSERT_LIBRARIES and other
+  // user env must NOT be forwarded into the osascript subprocess.
+  assert.deepEqual(
+    settingsEnvStrings({ env: { [SOUND_ENV]: 'Hero', [STOP_ENV]: 'off', DYLD_INSERT_LIBRARIES: '/evil.dylib', FOO: 'bar', BAD: 2 } }),
+    { [SOUND_ENV]: 'Hero', [STOP_ENV]: 'off' }
+  );
+  // Non-string values of our own keys are skipped too.
+  assert.deepEqual(settingsEnvStrings({ env: { [SOUND_ENV]: 5 } }), {});
   assert.deepEqual(settingsEnvStrings({}), {});
   assert.deepEqual(settingsEnvStrings({ env: 'notanobject' }), {});
   assert.deepEqual(settingsEnvStrings({ env: ['a'] }), {});
@@ -286,6 +302,18 @@ test('removeOurEnv: no-op when key absent or env missing', () => {
   assert.equal(removeOurEnv({ env: { FOO: 'bar' } }).removed, false);
   assert.equal(removeOurEnv({ hooks: {} }).removed, false);
   assert.equal(removeOurEnv({}).removed, false);
+});
+
+test('removeOurEnv: clears every owned key (sound + stop), preserves others', () => {
+  const r = removeOurEnv({ env: { [SOUND_ENV]: 'Hero', [STOP_ENV]: 'off', FOO: 'bar' } });
+  assert.equal(r.removed, true);
+  assert.deepEqual(r.next.env, { FOO: 'bar' });
+});
+
+test('removeOurEnv: drops env block when only owned keys were present', () => {
+  const r = removeOurEnv({ env: { [STOP_ENV]: 'off' }, hooks: {} });
+  assert.equal(r.removed, true);
+  assert.equal('env' in r.next, false);
 });
 
 test('removeOurEnv: does not mutate the input', () => {

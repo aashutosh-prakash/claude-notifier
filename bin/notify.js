@@ -19,10 +19,11 @@ const EVENT_DEFAULTS = {
   Stop: { message: 'Task complete', sound: 'Glass', emoji: '✅' },
 };
 
-// AppleScript split across separate `-e` flags so we can branch on an empty
-// subtitle. `display notification ... subtitle ""` raises macOS error -1700
-// ("Can't make item 2 into type Unicode text") on some versions, so the
-// empty-subtitle case must skip the `subtitle` clause entirely.
+// AppleScript split across separate `-e` flags so we can branch on empty
+// arguments. `display notification ... subtitle ""` / `... sound name ""` both
+// raise macOS error -1700 ("Can't make item N into type Unicode text") on some
+// versions, so an empty subtitle skips the `subtitle` clause and an empty sound
+// (silent mode, see resolveSound) skips the `sound name` clause entirely.
 // buildOsascriptArgs always passes exactly three argv items (message,
 // subtitle, sound), so we read them positionally without count guards.
 const SCRIPT_LINES = [
@@ -30,10 +31,18 @@ const SCRIPT_LINES = [
   'set msg to (item 1 of argv) as text',
   'set sub to (item 2 of argv) as text',
   'set snd to (item 3 of argv) as text',
+  'if snd is "" then',
+  'if sub is "" then',
+  'display notification msg with title "Claude Code"',
+  'else',
+  'display notification msg with title "Claude Code" subtitle sub',
+  'end if',
+  'else',
   'if sub is "" then',
   'display notification msg with title "Claude Code" sound name snd',
   'else',
   'display notification msg with title "Claude Code" subtitle sub sound name snd',
+  'end if',
   'end if',
   'end run',
 ];
@@ -63,17 +72,30 @@ function decorateMessage(emoji, message) {
   return emoji ? `${emoji} ${message}` : message;
 }
 
+// Sentinel values for CLAUDE_NUDGE_SOUND that mean "silent" (banner, no chime).
+// resolveSound maps these to '' so SCRIPT_LINES omits the `sound name` clause.
+const SILENT_SOUND_VALUES = new Set(['none', 'off', 'silent', 'mute']);
+
 // A single optional override (CLAUDE_NUDGE_SOUND) applies to every event; when
-// unset, each event keeps its own default sound (see EVENT_DEFAULTS). The value
-// is sanitized + clamped like all other osascript-bound strings — it is set by
-// the user in settings.json, so it is treated as untrusted input. An invalid
-// sound name does not error: macOS falls back to the default alert sound.
+// unset, each event keeps its own default sound (see EVENT_DEFAULTS). A silent
+// sentinel (none/off/silent/mute) returns '' → no sound. The value is sanitized
+// + clamped like all other osascript-bound strings — it is set by the user in
+// settings.json, so it is treated as untrusted input. An invalid (non-sentinel)
+// name does not error: macOS falls back to the default alert sound.
 function resolveSound(env, defaults) {
   // Sanitize the override FIRST, then fall back: a non-empty but control-char-only
-  // value strips to '' and must still fall through to the default — never to
-  // `sound name ""`, which raises osascript error -1700 and drops the notification.
+  // value strips to '' and must still fall through to the default.
   const chosen = sanitize(env.CLAUDE_NUDGE_SOUND, MAX_SOUND_LEN);
-  return chosen || defaults.sound;
+  if (!chosen) return defaults.sound;
+  if (SILENT_SOUND_VALUES.has(chosen.toLowerCase())) return ''; // silent: no sound clause
+  return chosen;
+}
+
+// The Stop (task-complete) notification is on by default; CLAUDE_NUDGE_STOP set
+// to a falsy-ish value disables just that event (permission prompts still fire).
+function isStopDisabled(env) {
+  const v = String(env.CLAUDE_NUDGE_STOP || '').trim().toLowerCase();
+  return v === 'off' || v === 'false' || v === '0' || v === 'no';
 }
 
 function readStdin() {
@@ -100,6 +122,13 @@ async function main() {
   }
 
   const event = resolveEvent(payload);
+
+  // Honor an opt-out of the task-complete notification without uninstalling the
+  // hook — exit silently before doing any work.
+  if (event === 'Stop' && isStopDisabled(process.env)) {
+    process.exit(0);
+  }
+
   const defaults = EVENT_DEFAULTS[event];
   const rawMessage = sanitize(payload.message || defaults.message, MAX_MESSAGE_LEN);
   const message = decorateMessage(defaults.emoji, rawMessage);
@@ -128,8 +157,10 @@ module.exports = {
   resolveEvent,
   decorateMessage,
   resolveSound,
+  isStopDisabled,
   buildOsascriptArgs,
   SCRIPT_LINES,
+  SILENT_SOUND_VALUES,
   RUNNER_VERSION,
   MAX_MESSAGE_LEN,
   MAX_SUBTITLE_LEN,

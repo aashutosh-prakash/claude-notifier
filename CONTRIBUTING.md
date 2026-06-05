@@ -8,7 +8,8 @@ In scope:
 - macOS notification reliability, install/uninstall correctness
 - Security hardening (see [SECURITY.md](./SECURITY.md))
 - Compatibility with new Claude Code hook payload shapes
-- Notification sound customization via the `CLAUDE_NUDGE_SOUND` key in `settings.json` (`--list-sounds` / `--set-sound`)
+- Notification sound customization via the `CLAUDE_NUDGE_SOUND` key in `settings.json` (`--list-sounds` / `--set-sound`, incl. `none` to silence)
+- Turning off the task-complete notification via `CLAUDE_NUDGE_STOP` (`--disable-completion` / `--enable-completion`)
 
 Out of scope (for now):
 - Linux / Windows support (may reconsider — open an issue to discuss)
@@ -18,7 +19,7 @@ Out of scope (for now):
 Considered but not planned (open an issue if you need one):
 - Per-event sounds (one global `CLAUDE_NUDGE_SOUND` for all events today)
 - Suppressing the nudge when the Claude terminal is frontmost
-- Silent mode and custom (non-system) audio files
+- Custom (non-system) audio files
 
 ## Development
 
