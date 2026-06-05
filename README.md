@@ -48,8 +48,10 @@ npx claude-nudge --uninstall --keep-backups # keep the backup directory
 | `npx claude-nudge` | Install both hooks |
 | `npx claude-nudge --test` | Fire a sample notification (also triggers the one-time macOS permission prompt) |
 | `npx claude-nudge --doctor` | Diagnose install health (platform, settings.json, runner, osascript) |
+| `npx claude-nudge --list-sounds` | List the notification sounds available on this Mac |
+| `npx claude-nudge --set-sound NAME` | Set the notification sound for all events |
 | `npx claude-nudge --dry-run` | Show proposed changes without writing anything |
-| `npx claude-nudge --uninstall` | Remove both hooks and the runner directory |
+| `npx claude-nudge --uninstall` | Remove both hooks, the runner directory, and the `CLAUDE_NUDGE_SOUND` config key |
 | `npx claude-nudge --force` | Skip the 3-second abort window when replacing an existing foreign `permission_prompt` hook |
 | `npx claude-nudge --help` | Show help |
 | `npx claude-nudge --version` | Print version |
@@ -91,6 +93,35 @@ If you already have other `Notification` matchers or other `Stop` hooks, **they 
 ### Note on the Stop hook
 
 The `Stop` hook fires at the end of every main-agent turn, so you will get a "Task complete" notification after each response — including short back-and-forth exchanges. If that's too noisy, uninstall with `--uninstall` (which removes both hooks) or edit `~/.claude/settings.json` by hand to drop just the `Stop` entry.
+
+## Customizing the sound
+
+By default, permission prompts play **Sosumi** and task-complete plays **Glass**. You can override the sound used for *all* events with one command:
+
+```bash
+npx claude-nudge --list-sounds      # see what's available on your Mac
+npx claude-nudge --set-sound Hero   # set it (case-insensitive, validated)
+npx claude-nudge --test             # hear it — reflects the configured sound
+```
+
+`--set-sound` validates the name against the sounds installed on your Mac and writes a single `CLAUDE_NUDGE_SOUND` key into the `env` block of `~/.claude/settings.json`:
+
+```diff
+  {
+    "hooks": { ... },
++   "env": {
++     "CLAUDE_NUDGE_SOUND": "Hero"
++   }
+  }
+```
+
+Notes:
+
+- `--list-sounds` enumerates the `.aiff`/`.aif`/`.caf` files in `/System/Library/Sounds`, `/Library/Sounds`, and `~/Library/Sounds` — these are the formats macOS plays for notifications. (Drop your own `.aiff` in `~/Library/Sounds` and it shows up; `.wav`/`.mp3` are not listed because macOS won't reliably play them as notification sounds.)
+- `--set-sound` **rejects an unknown name** (with a suggestion) so you can't silently set a sound that won't play. If you instead hand-edit `CLAUDE_NUDGE_SOUND` to a name that doesn't exist, the runner doesn't error — macOS just falls back to the default alert sound.
+- `--test` injects `settings.json`'s `env` into the runner, so it plays the sound you configured (matching what Claude Code does when a real notification fires).
+- `CLAUDE_NUDGE_SOUND` is a single override applied to **both** events, so there's no sound name that restores the distinct per-event defaults (Sosumi for permission prompts, Glass for task-complete). To go back to those, **remove the key** — by hand-editing `settings.json` or via `--uninstall` (which removes it along with the hooks).
+- You can also set the variable by hand instead of using `--set-sound`; the runner reads it on every notification.
 
 ## macOS permission prompt
 

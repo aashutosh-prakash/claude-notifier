@@ -17,9 +17,12 @@ const {
   stampRunnerVersion,
   extractRunnerVersion,
   parseArgs,
+  settingsEnvStrings,
+  removeOurEnv,
   MATCHER,
   RUNNER_MARKER,
   HOOK_CONFIGS,
+  SOUND_ENV,
 } = require('../bin/install.js');
 
 const RUNNER = `/Users/test/.claude/claude-nudge/notify.js`;
@@ -248,6 +251,47 @@ test('parseArgs: --test / --doctor / --help / --version set their flags', () => 
   assert.equal(parseArgs(['-h']).help, true);
   assert.equal(parseArgs(['--version']).version, true);
   assert.equal(parseArgs(['-v']).version, true);
+});
+
+test('parseArgs: --list-sounds and --set-sound (both forms) set flags', () => {
+  assert.equal(parseArgs(['--list-sounds']).listSounds, true);
+  assert.equal(parseArgs(['--set-sound', 'Hero']).setSound, 'Hero');
+  assert.equal(parseArgs(['--set-sound=Hero']).setSound, 'Hero');
+  // value-taking flags turn off the default install action
+  assert.equal(parseArgs(['--set-sound', 'Hero']).install, false);
+  assert.equal(parseArgs(['--list-sounds']).install, false);
+});
+
+test('settingsEnvStrings: returns only string-valued env keys', () => {
+  assert.deepEqual(settingsEnvStrings({ env: { A: 'x', B: 2, C: 'y', D: null } }), { A: 'x', C: 'y' });
+  assert.deepEqual(settingsEnvStrings({}), {});
+  assert.deepEqual(settingsEnvStrings({ env: 'notanobject' }), {});
+  assert.deepEqual(settingsEnvStrings({ env: ['a'] }), {});
+});
+
+test('removeOurEnv: strips CLAUDE_NUDGE_SOUND and drops an emptied env block', () => {
+  const r = removeOurEnv({ env: { [SOUND_ENV]: 'Hero' }, hooks: {} });
+  assert.equal(r.removed, true);
+  assert.equal('env' in r.next, false); // emptied env block dropped
+  assert.deepEqual(r.next, { hooks: {} });
+});
+
+test('removeOurEnv: preserves other env keys', () => {
+  const r = removeOurEnv({ env: { [SOUND_ENV]: 'Hero', FOO: 'bar' } });
+  assert.equal(r.removed, true);
+  assert.deepEqual(r.next.env, { FOO: 'bar' });
+});
+
+test('removeOurEnv: no-op when key absent or env missing', () => {
+  assert.equal(removeOurEnv({ env: { FOO: 'bar' } }).removed, false);
+  assert.equal(removeOurEnv({ hooks: {} }).removed, false);
+  assert.equal(removeOurEnv({}).removed, false);
+});
+
+test('removeOurEnv: does not mutate the input', () => {
+  const input = { env: { [SOUND_ENV]: 'Hero', FOO: 'bar' } };
+  removeOurEnv(input);
+  assert.deepEqual(input.env, { [SOUND_ENV]: 'Hero', FOO: 'bar' });
 });
 
 test('stampRunnerVersion: injects the version into the runner constant', () => {

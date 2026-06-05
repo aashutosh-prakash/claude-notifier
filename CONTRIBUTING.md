@@ -8,11 +8,17 @@ In scope:
 - macOS notification reliability, install/uninstall correctness
 - Security hardening (see [SECURITY.md](./SECURITY.md))
 - Compatibility with new Claude Code hook payload shapes
+- Notification sound customization via the `CLAUDE_NUDGE_SOUND` key in `settings.json` (`--list-sounds` / `--set-sound`)
 
 Out of scope (for now):
 - Linux / Windows support (may reconsider — open an issue to discuss)
-- Customization via CLI flags (planned for a future release via `~/.claude/claude-nudge.json`)
 - Integrations with non-macOS notification systems
+- A separate config file — configuration lives in the `env` block of `~/.claude/settings.json`, never a new file
+
+Considered but not planned (open an issue if you need one):
+- Per-event sounds (one global `CLAUDE_NUDGE_SOUND` for all events today)
+- Suppressing the nudge when the Claude terminal is frontmost
+- Silent mode and custom (non-system) audio files
 
 ## Development
 

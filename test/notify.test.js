@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-const { sanitize, resolveEvent, decorateMessage, EVENT_DEFAULTS, RUNNER_VERSION, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN } = require('../bin/notify.js');
+const { sanitize, resolveEvent, decorateMessage, resolveSound, EVENT_DEFAULTS, RUNNER_VERSION, MAX_MESSAGE_LEN, MAX_SUBTITLE_LEN, MAX_SOUND_LEN } = require('../bin/notify.js');
 const NOTIFY = path.join(__dirname, '..', 'bin', 'notify.js');
 
 // On non-macOS (CI Linux), osascript is absent; the runner's try/catch swallows
@@ -130,6 +130,30 @@ test('decorateMessage: returns the message unchanged when no emoji', () => {
 test('notify.js: exits 0 for Stop payload (no message field)', () => {
   const r = runNotify(JSON.stringify({ hook_event_name: 'Stop', cwd: '/tmp/proj' }));
   assert.equal(r.status, 0);
+});
+
+test('resolveSound: falls back to the per-event default when env unset', () => {
+  assert.equal(resolveSound({}, EVENT_DEFAULTS.Notification), EVENT_DEFAULTS.Notification.sound);
+  assert.equal(resolveSound({}, EVENT_DEFAULTS.Stop), EVENT_DEFAULTS.Stop.sound);
+});
+
+test('resolveSound: CLAUDE_NUDGE_SOUND overrides every event', () => {
+  assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: 'Hero' }, EVENT_DEFAULTS.Notification), 'Hero');
+  assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: 'Hero' }, EVENT_DEFAULTS.Stop), 'Hero');
+});
+
+test('resolveSound: empty or strip-to-empty override falls through to default (never "")', () => {
+  // Both a literal empty string AND a control-char-only value (which sanitizes
+  // to '') must fall back to the default — returning '' would become
+  // `sound name ""` and silently drop the notification (osascript -1700).
+  assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: '' }, EVENT_DEFAULTS.Stop), EVENT_DEFAULTS.Stop.sound);
+  assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: '\x01\x02' }, EVENT_DEFAULTS.Stop), EVENT_DEFAULTS.Stop.sound);
+});
+
+test('resolveSound: sanitizes and clamps the override (osascript-bound)', () => {
+  assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: 'He\x00ro' }, EVENT_DEFAULTS.Stop), 'Hero');
+  const long = 'x'.repeat(200);
+  assert.equal(resolveSound({ CLAUDE_NUDGE_SOUND: long }, EVENT_DEFAULTS.Stop).length, MAX_SOUND_LEN);
 });
 
 test('RUNNER_VERSION: repo source carries the dev placeholder stamp', () => {

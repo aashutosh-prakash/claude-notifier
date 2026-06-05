@@ -12,6 +12,7 @@ const RUNNER_VERSION = '0.0.0-dev';
 
 const MAX_MESSAGE_LEN = 200;
 const MAX_SUBTITLE_LEN = 100;
+const MAX_SOUND_LEN = 50;
 
 const EVENT_DEFAULTS = {
   Notification: { message: 'Permission required', sound: 'Sosumi', emoji: '🔔' },
@@ -62,6 +63,19 @@ function decorateMessage(emoji, message) {
   return emoji ? `${emoji} ${message}` : message;
 }
 
+// A single optional override (CLAUDE_NUDGE_SOUND) applies to every event; when
+// unset, each event keeps its own default sound (see EVENT_DEFAULTS). The value
+// is sanitized + clamped like all other osascript-bound strings — it is set by
+// the user in settings.json, so it is treated as untrusted input. An invalid
+// sound name does not error: macOS falls back to the default alert sound.
+function resolveSound(env, defaults) {
+  // Sanitize the override FIRST, then fall back: a non-empty but control-char-only
+  // value strips to '' and must still fall through to the default — never to
+  // `sound name ""`, which raises osascript error -1700 and drops the notification.
+  const chosen = sanitize(env.CLAUDE_NUDGE_SOUND, MAX_SOUND_LEN);
+  return chosen || defaults.sound;
+}
+
 function readStdin() {
   return new Promise((resolve) => {
     let data = '';
@@ -95,7 +109,7 @@ async function main() {
   try {
     execFileSync(
       'osascript',
-      buildOsascriptArgs(message, subtitle, defaults.sound),
+      buildOsascriptArgs(message, subtitle, resolveSound(process.env, defaults)),
       { stdio: ['ignore', 'ignore', 'inherit'] }
     );
   } catch (err) {
@@ -113,10 +127,12 @@ module.exports = {
   sanitize,
   resolveEvent,
   decorateMessage,
+  resolveSound,
   buildOsascriptArgs,
   SCRIPT_LINES,
   RUNNER_VERSION,
   MAX_MESSAGE_LEN,
   MAX_SUBTITLE_LEN,
+  MAX_SOUND_LEN,
   EVENT_DEFAULTS,
 };

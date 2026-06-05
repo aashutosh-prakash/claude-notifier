@@ -13,6 +13,27 @@ const RUNNER_MARKER = 'claude-nudge/notify.js';
 const KEEP_BACKUPS = 5;
 const COUNTDOWN_SECONDS = 3;
 
+// The single env var that overrides the notification sound for every event.
+// Lives in the `env` block of ~/.claude/settings.json; read by notify.js.
+const SOUND_ENV = 'CLAUDE_NUDGE_SOUND';
+// Directories macOS searches for `sound name`, in its real precedence order
+// (per-user → local → system). We enumerate them so discovery (--list-sounds)
+// and validation (--set-sound) share one source of truth and pick up
+// user-installed sounds automatically. listSounds() dedupes first-dir-wins, so
+// a user's ~/Library/Sounds override shadows the system entry — matching how
+// macOS itself resolves the name at play time.
+const SOUND_DIRS = [
+  path.join(os.homedir(), 'Library', 'Sounds'),
+  '/Library/Sounds',
+  '/System/Library/Sounds',
+];
+// Only formats macOS notification `sound name` actually resolves. The 14 system
+// sounds are all .aiff; .caf is also honored. We deliberately exclude .wav/.mp3/
+// .m4a: listing them would let --set-sound accept a name that validates but then
+// plays nothing (macOS silently falls back to the default alert) — the exact
+// "set but silent" confusion the validation step exists to prevent.
+const SOUND_EXTS = new Set(['.aiff', '.aif', '.caf']);
+
 // Hooks we install. `matcher: null` means the event has no matcher-based
 // dedup key (Stop fires once per agent turn); we identify our own entry
 // solely via RUNNER_MARKER in the command path.
@@ -43,9 +64,22 @@ function parseArgs(argv) {
     keepBackups: false,
     help: false,
     version: false,
+    listSounds: false,
+    setSound: null,
   };
-  for (const arg of argv) {
-    switch (arg) {
+  // `--set-sound` takes a value, accepted as either `--set-sound NAME` or
+  // `--set-sound=NAME`. An index loop lets us consume the following token.
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    // Only value-taking flags accept `--flag=value`. Splitting `=` for every
+    // flag would silently accept junk like `--test=foo`; keep that an error.
+    let inlineValue = null;
+    let name = arg;
+    if (arg.startsWith('--set-sound=')) {
+      name = '--set-sound';
+      inlineValue = arg.slice('--set-sound='.length);
+    }
+    switch (name) {
       case '--uninstall': flags.uninstall = true; flags.install = false; break;
       case '--test': flags.test = true; flags.install = false; break;
       case '--doctor': flags.doctor = true; flags.install = false; break;
@@ -53,6 +87,19 @@ function parseArgs(argv) {
       case '--force': flags.force = true; break;
       case '--keep-backups': flags.keepBackups = true; break;
       case '--install': flags.install = true; break;
+      case '--list-sounds': flags.listSounds = true; flags.install = false; break;
+      case '--set-sound': {
+        const value = inlineValue !== null ? inlineValue : argv[++i];
+        // Reject missing value AND empty inline value (`--set-sound=`) the same
+        // way, so both forms give the same exit code and message.
+        if (value === undefined || value === '' || value.startsWith('-')) {
+          process.stderr.write('claude-nudge: --set-sound requires a sound name (e.g. --set-sound Hero)\n');
+          process.exit(2);
+        }
+        flags.setSound = value;
+        flags.install = false;
+        break;
+      }
       case '-h': case '--help': flags.help = true; flags.install = false; break;
       case '-v': case '--version': flags.version = true; flags.install = false; break;
       default:
@@ -68,9 +115,11 @@ function printHelp() {
 
 Usage:
   npx claude-nudge              Install Notification (permission) + Stop (task-complete) hooks into ~/.claude/settings.json
-  npx claude-nudge --uninstall  Remove both hooks (and runner directory)
+  npx claude-nudge --uninstall  Remove both hooks, the runner directory, and the CLAUDE_NUDGE_SOUND config
   npx claude-nudge --test       Fire a sample notification to verify install
   npx claude-nudge --doctor     Diagnose install health
+  npx claude-nudge --list-sounds      List available notification sounds
+  npx claude-nudge --set-sound NAME   Set the notification sound for all events
   npx claude-nudge --dry-run    Show what would change without writing
   npx claude-nudge --force      Skip the 3s confirm when replacing a foreign hook
   npx claude-nudge --keep-backups   On --uninstall, retain the backup directory
@@ -281,6 +330,33 @@ function removeAllHooks(settings) {
   return { next: current, removed: anyRemoved };
 }
 
+// The subset of settings.json `env` safe to pass to a child process: only
+// string-valued keys (process env values must be strings).
+function settingsEnvStrings(settings) {
+  const out = {};
+  const env = settings && settings.env;
+  if (env && typeof env === 'object' && !Array.isArray(env)) {
+    for (const [k, v] of Object.entries(env)) {
+      if (typeof v === 'string') out[k] = v;
+    }
+  }
+  return out;
+}
+
+// Strip the one env key claude-nudge owns (CLAUDE_NUDGE_SOUND) so --uninstall
+// leaves nothing behind, and drop an `env` block that becomes empty. Pure;
+// returns a new object. Other env keys the user set are preserved.
+function removeOurEnv(settings) {
+  if (!settings || !settings.env || typeof settings.env !== 'object' ||
+      Array.isArray(settings.env) || !(SOUND_ENV in settings.env)) {
+    return { next: settings, removed: false };
+  }
+  const next = JSON.parse(JSON.stringify(settings));
+  delete next.env[SOUND_ENV];
+  if (Object.keys(next.env).length === 0) delete next.env;
+  return { next, removed: true };
+}
+
 function simpleDiff(before, after) {
   const a = before.split('\n');
   const b = after.split('\n');
@@ -376,7 +452,11 @@ async function cmdUninstall(p, flags) {
     return;
   }
   const settingsBefore = readSettings(p.settings);
-  const { next, removed } = removeAllHooks(settingsBefore);
+  const hooksResult = removeAllHooks(settingsBefore);
+  const envResult = removeOurEnv(hooksResult.next);
+  const next = envResult.next;
+  const removed = hooksResult.removed;
+  const changed = removed || envResult.removed;
 
   const beforeStr = serializeSettings(settingsBefore);
   const afterStr = serializeSettings(next);
@@ -390,7 +470,7 @@ async function cmdUninstall(p, flags) {
   }
 
   const backupPath = backupSettings(p);
-  if (removed) atomicWrite(p.settings, afterStr, 0o644);
+  if (changed) atomicWrite(p.settings, afterStr, 0o644);
   removeRunnerDir(p);
   if (!flags.keepBackups && fs.existsSync(p.backupDir)) {
     fs.rmSync(p.backupDir, { recursive: true, force: true });
@@ -399,6 +479,7 @@ async function cmdUninstall(p, flags) {
   const lines = [
     c(COLOR.green, '✓ claude-nudge uninstalled'),
     `  hook    : ${removed ? 'removed' : '(not found — nothing to remove)'}`,
+    ...(envResult.removed ? [`  config  : ${SOUND_ENV} removed from settings.json env`] : []),
     `  runner  : ${p.runnerDir} removed`,
     `  backup  : ${flags.keepBackups ? `retained at ${p.backupDir}` : 'removed (use --keep-backups to retain next time)'}`,
   ];
@@ -416,10 +497,17 @@ function cmdTest(p) {
     message: 'Test notification — claude-nudge is working',
     cwd: process.cwd(),
   });
+  // Inject settings.json's `env` into the child, mirroring what Claude Code's
+  // hook executor does at runtime. Without this, a configured CLAUDE_NUDGE_SOUND
+  // (which lives only in settings.json, not the shell) would be invisible and
+  // --test would play the default — making the documented "--set-sound then
+  // --test to hear it" flow misleading.
+  const childEnv = { ...process.env, ...settingsEnvStrings(readSettings(p.settings)) };
   try {
-    execSync(`echo ${JSON.stringify(payload)} | ${JSON.stringify(p.runner)}`, { stdio: 'inherit' });
+    execSync(`echo ${JSON.stringify(payload)} | ${JSON.stringify(p.runner)}`, { stdio: 'inherit', env: childEnv });
     process.stdout.write(c(COLOR.green, '✓ sample notification fired') + '\n');
     process.stdout.write(c(COLOR.dim, '  If you did not see it, check System Settings → Notifications for your terminal app.') + '\n');
+    process.stdout.write(c(COLOR.dim, '  Also make sure Focus / Do Not Disturb is off (Control Center → Focus) — it silences banners.') + '\n');
   } catch (err) {
     fail(`Failed to fire test notification: ${err.message}`);
   }
@@ -489,6 +577,99 @@ function cmdDoctor(p) {
   else { process.stdout.write(c(COLOR.yellow, 'Some checks failed. See hints above.') + '\n'); process.exit(1); }
 }
 
+// Enumerate the sound names macOS will accept, deduped (case-insensitively,
+// first directory wins) and sorted. Returns [{ name, dir }] preserving the
+// on-disk casing so --set-sound can store the canonical name.
+function listSounds() {
+  const seen = new Map(); // lowercased name -> { name, dir }
+  for (const dir of SOUND_DIRS) {
+    let entries;
+    try { entries = fs.readdirSync(dir); } catch { continue; }
+    for (const entry of entries) {
+      const ext = path.extname(entry).toLowerCase();
+      if (!SOUND_EXTS.has(ext)) continue;
+      const name = entry.slice(0, -ext.length);
+      const key = name.toLowerCase();
+      if (!seen.has(key)) seen.set(key, { name, dir });
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function cmdListSounds() {
+  const sounds = listSounds();
+  if (sounds.length === 0) {
+    process.stdout.write(c(COLOR.yellow, 'No sounds found in ' + SOUND_DIRS.join(', ')) + '\n');
+    return;
+  }
+  process.stdout.write(c(COLOR.cyan, 'Available notification sounds:') + '\n');
+  for (const { name } of sounds) process.stdout.write('  ' + name + '\n');
+  process.stdout.write(c(COLOR.dim, `\nSet one with:  npx claude-nudge --set-sound ${sounds[0].name}`) + '\n');
+}
+
+function cmdSetSound(p, name, flags) {
+  const dryRun = !!(flags && flags.dryRun);
+
+  // Install guard, mirroring cmdTest: a sound is only ever read by the hook
+  // runner, so configuring one for an uninstalled tool would write an orphan
+  // env block and then suggest --test, which fails its own guard. Skipped under
+  // --dry-run, which writes nothing and must stay read-only and non-fatal.
+  if (!dryRun && !fs.existsSync(p.runner)) {
+    fail('Runner not installed yet. Run `npx claude-nudge` first.');
+  }
+
+  const sounds = listSounds();
+  const match = sounds.find((s) => s.name.toLowerCase() === name.toLowerCase());
+  if (!match) {
+    const lower = name.toLowerCase();
+    const near = sounds
+      .filter((s) => s.name.toLowerCase().includes(lower) || lower.includes(s.name.toLowerCase()))
+      .slice(0, 3)
+      .map((s) => s.name);
+    const hint = near.length ? `  Did you mean: ${near.join(', ')}?\n` : '';
+    const body = c(COLOR.red, `✗ "${name}" is not an available sound.`) + '\n' + c(COLOR.dim, hint) +
+      c(COLOR.dim, '  Run `npx claude-nudge --list-sounds` to see all available sounds.') + '\n';
+    // In --dry-run, a typo is reported as a preview, not a hard abort — dry-run
+    // is a read-only, non-fatal path everywhere else.
+    if (dryRun) { process.stdout.write(body); return; }
+    process.stderr.write(body);
+    process.exit(1);
+  }
+
+  const settings = readSettings(p.settings);
+  if (!settings.env || typeof settings.env !== 'object' || Array.isArray(settings.env)) settings.env = {};
+  const prev = settings.env[SOUND_ENV];
+
+  // No-op: already set to this exact value. Skip the backup+write so repeated
+  // runs don't churn the (size-limited) backup rotation and evict real backups.
+  if (prev === match.name) {
+    if (dryRun) {
+      process.stdout.write(c(COLOR.yellow, `── dry-run: notification sound already set to "${match.name}" (no change) ──`) + '\n');
+    } else {
+      process.stdout.write(c(COLOR.green, `✓ notification sound already set to "${match.name}"`) +
+        c(COLOR.dim, ' (no change)') + '\n');
+    }
+    return;
+  }
+
+  if (dryRun) {
+    process.stdout.write(c(COLOR.yellow, '── dry-run: would set notification sound ──') + '\n');
+    process.stdout.write(`  ${SOUND_ENV}: ${prev ? `"${prev}" → ` : ''}"${match.name}"  in ${p.settings}\n`);
+    return;
+  }
+
+  settings.env[SOUND_ENV] = match.name;
+  backupSettings(p);
+  ensureDir(p.claudeDir, 0o755);
+  atomicWrite(p.settings, serializeSettings(settings), 0o644);
+
+  // prev !== match.name here (the equal case returned above), so the only
+  // question is whether there was a previous value to report.
+  process.stdout.write(c(COLOR.green, `✓ notification sound set to "${match.name}"`) +
+    (prev ? c(COLOR.dim, ` (was "${prev}")`) : '') + '\n');
+  process.stdout.write(c(COLOR.dim, `  Wrote ${SOUND_ENV} to ${p.settings}. Run \`npx claude-nudge --test\` to hear it.`) + '\n');
+}
+
 async function main() {
   const flags = parseArgs(process.argv.slice(2));
 
@@ -504,6 +685,8 @@ async function main() {
   const p = paths(home);
 
   if (flags.doctor) return cmdDoctor(p);
+  if (flags.listSounds) return cmdListSounds();
+  if (flags.setSound !== null) return cmdSetSound(p, flags.setSound, flags);
   if (flags.test) return cmdTest(p);
   if (flags.uninstall) return cmdUninstall(p, flags);
   return cmdInstall(p, flags);
@@ -529,9 +712,13 @@ module.exports = {
   stampRunnerVersion,
   extractRunnerVersion,
   serializeSettings,
+  listSounds,
+  settingsEnvStrings,
+  removeOurEnv,
   paths,
   MATCHER,
   RUNNER_MARKER,
   KEEP_BACKUPS,
   HOOK_CONFIGS,
+  SOUND_ENV,
 };
