@@ -1,8 +1,23 @@
 # claude-nudge
 
-> macOS notifications for [Claude Code](https://claude.com/claude-code) — fires when Claude needs your input **and** when a task finishes, so you don't have to watch the terminal.
+[![npm version](https://img.shields.io/npm/v/claude-nudge.svg)](https://www.npmjs.com/package/claude-nudge)
+[![npm downloads](https://img.shields.io/npm/dm/claude-nudge.svg)](https://www.npmjs.com/package/claude-nudge)
+[![license: MIT](https://img.shields.io/npm/l/claude-nudge.svg)](./LICENSE)
+[![node](https://img.shields.io/node/v/claude-nudge.svg)](https://nodejs.org)
 
-**macOS only.** Two nudges are installed by default:
+> **Never miss a Claude Code permission request or finished task again.** `claude-nudge` adds native macOS desktop notifications to the [Claude Code](https://claude.com/claude-code) CLI using hooks — so you don't have to babysit the terminal.
+
+- 🔔 **Permission requests** pop a notification — approve without watching the terminal
+- ✅ **Completed tasks** pop a notification — know the instant Claude finishes
+- ⚡ **One command** to install — zero dependencies, zero telemetry, zero network calls
+
+```bash
+npx claude-nudge
+```
+
+**macOS only.** (Notifications are delivered via `osascript`.)
+
+## What it looks like
 
 **Permission prompt** — Sosumi chime, body is 🔔 + the permission message (e.g. "🔔 Allow Bash `rm -rf`?"). Fires on the `Notification.permission_prompt` hook.
 
@@ -14,13 +29,17 @@
 
 Both show `Claude Code` as the title and the current project directory as the subtitle.
 
----
+## Why?
+
+When Claude Code requests permission or finishes a task, the only signal is inside your terminal. If you're reviewing code in another window, reading docs, grabbing coffee, or waiting out a long-running task, it's easy to miss — so Claude sits idle waiting on you, or finishes without you noticing.
+
+`claude-nudge` surfaces those two moments in macOS Notification Center, so you can stay heads-down elsewhere and still react the moment Claude needs you.
 
 ## Install
 
 ```bash
-npx claude-nudge
-npx claude-nudge --test      # fire a sample notification + grant macOS permission
+npx claude-nudge            # install both hooks
+npx claude-nudge --test     # fire a sample notification + grant macOS permission
 ```
 
 That's it. The installer:
@@ -28,6 +47,22 @@ That's it. The installer:
 1. Adds a `Notification` hook (matcher `permission_prompt`) **and** a `Stop` hook to `~/.claude/settings.json`.
 2. Copies the runner to `~/.claude/claude-nudge/notify.js` (stable path, survives `npm` cache cleanup). The runner picks the right message + sound based on the hook event it receives.
 3. Backs up your prior `settings.json` to `~/.claude/.claude-nudge-backups/` (mode `0600`, 5 most recent kept).
+
+> **First run:** the first notification triggers a one-time macOS permission prompt for your terminal app. Run `npx claude-nudge --test` right after installing so it's granted up front (see [Troubleshooting](#troubleshooting)).
+
+## How it works
+
+```
+Claude Code event  (permission prompt  /  task complete)
+        │  hook fires
+        ▼
+~/.claude/claude-nudge/notify.js   (picks message + sound for the event)
+        │
+        ▼
+osascript  ──▶  macOS Notification Center
+```
+
+No daemon, no background process — the runner executes only when a hook fires, then exits.
 
 ## Update
 
@@ -140,11 +175,31 @@ Notes:
 - `CLAUDE_NUDGE_SOUND` is a single override applied to **both** events, so there's no sound name that restores the distinct per-event defaults (Sosumi for permission prompts, Glass for task-complete). To go back to those, **remove the key** — by hand-editing `settings.json` or via `--uninstall` (which removes it along with the hooks).
 - You can also set the variable by hand instead of using `--set-sound`; the runner reads it on every notification.
 
-## macOS permission prompt
+## Troubleshooting
 
-The first time a notification fires, macOS asks your terminal (iTerm, Terminal, VS Code, etc.) for Notification permission. Running `npx claude-nudge --test` immediately after install triggers this prompt up front, so the first *real* Claude notification isn't silently swallowed.
+**No notifications appearing?** Run the doctor — it checks platform, `settings.json`, the runner, and `osascript`:
 
-If you dismissed the prompt, re-enable via **System Settings → Notifications → [your terminal app]**.
+```bash
+npx claude-nudge --doctor
+```
+
+**Dismissed the macOS permission prompt?** The first notification asks your terminal (iTerm, Terminal, VS Code, etc.) for Notification permission. If you dismissed it, re-enable via **System Settings → Notifications → [your terminal app]**, then run `npx claude-nudge --test`.
+
+**Ran an update but still on the old version?** `npx` cache. Force a fresh fetch with `npx claude-nudge@latest`, then verify with `npx claude-nudge --doctor`.
+
+**Too many "Task complete" notifications?** The `Stop` hook fires every turn — mute just that one with `npx claude-nudge --disable-completion`.
+
+## FAQ
+
+**Does this send data anywhere?** No. Zero network calls, zero telemetry, zero runtime dependencies, zero npm lifecycle scripts. Everything runs locally on your Mac.
+
+**Does it work on Windows or Linux?** No — macOS only. Notifications are delivered through `osascript`, which is macOS-specific.
+
+**Why do notifications come from "Script Editor"?** A macOS limitation, not a bug — `osascript` notifications are always attributed to Script Editor. See [Known limitation](#known-limitation-notifications-attribute-to-script-editor) below. Don't click them.
+
+**Can I change the sound?** Yes — `npx claude-nudge --set-sound NAME` (or `none` to silence). See [Customizing the sound](#customizing-the-sound).
+
+**Can I turn off the task-complete notification?** Yes — `npx claude-nudge --disable-completion`. Permission prompts keep firing.
 
 ## Known limitation: notifications attribute to "Script Editor"
 
@@ -157,10 +212,10 @@ This is a macOS platform behavior, not a bug in claude-nudge. The only way to ch
 
 ## Privacy
 
-- All processing is local. **Zero network calls.**
-- **Zero runtime dependencies.**
-- **Zero telemetry.**
-- **Zero npm lifecycle scripts** (no `preinstall`/`postinstall`).
+- ✅ **Zero network calls** — all processing is local
+- ✅ **Zero telemetry**
+- ✅ **Zero runtime dependencies**
+- ✅ **Zero npm lifecycle scripts** (no `preinstall`/`postinstall`)
 
 The project directory name (the basename of `cwd`) appears as the notification subtitle. This is visible in macOS notification history and on lock screen. If you work in directories with names you'd rather not display (e.g., `~/Projects/private-project/`), adjust lock-screen visibility in System Settings or consider renaming the folder.
 
