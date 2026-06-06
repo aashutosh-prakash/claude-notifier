@@ -7,7 +7,7 @@
 
 > **Never miss a Claude Code permission request or finished task again.** `claude-nudge` adds native macOS desktop notifications to the [Claude Code](https://claude.com/claude-code) CLI using hooks — so you don't have to babysit the terminal.
 
-- 🔔 **Permission requests** pop a notification — approve without watching the terminal
+- 🔔 **Permission requests** pop a notification — know the instant approval is needed, without watching the terminal
 - ✅ **Completed tasks** pop a notification — know the instant Claude finishes
 - ⚡ **One command** to install — zero dependencies, zero telemetry, zero network calls
 
@@ -19,7 +19,7 @@ npx claude-nudge
 
 ## What it looks like
 
-**Permission prompt** — Sosumi chime, body is 🔔 + the permission message (e.g. "🔔 Allow Bash `rm -rf`?"). Fires on the `Notification.permission_prompt` hook.
+**Permission prompt** — Sosumi chime, body is 🔔 + the permission message Claude Code sends (e.g. "🔔 Claude needs your permission"). Fires on the `Notification.permission_prompt` hook.
 
 ![Permission prompt notification on macOS](https://raw.githubusercontent.com/aashutosh-prakash/claude-nudge/main/assets/permission-prompt.png)
 
@@ -46,7 +46,7 @@ That's it. The installer:
 
 1. Adds a `Notification` hook (matcher `permission_prompt`) **and** a `Stop` hook to `~/.claude/settings.json`.
 2. Copies the runner to `~/.claude/claude-nudge/notify.js` (stable path, survives `npm` cache cleanup). The runner picks the right message + sound based on the hook event it receives.
-3. Backs up your prior `settings.json` to `~/.claude/.claude-nudge-backups/` (mode `0600`, 5 most recent kept).
+3. Backs up your prior `settings.json` to `~/.claude/.claude-nudge-backups/` (dir mode `0700`, backup files `0600`, 5 most recent kept).
 
 > **First run:** the first notification triggers a one-time macOS permission prompt for your terminal app. Run `npx claude-nudge --test` right after installing so it's granted up front (see [Troubleshooting](#troubleshooting)).
 
@@ -93,7 +93,7 @@ npx claude-nudge --uninstall --keep-backups # keep the backup directory
 | `npx claude-nudge --disable-completion` | Stop notifying on task-complete (permission prompts still fire) |
 | `npx claude-nudge --enable-completion` | Re-enable the task-complete notification |
 | `npx claude-nudge --dry-run` | Show proposed changes without writing anything |
-| `npx claude-nudge --uninstall` | Remove both hooks, the runner directory, and the `CLAUDE_NUDGE_SOUND` config key |
+| `npx claude-nudge --uninstall` | Remove both hooks, the runner directory, and claude-nudge's `env` keys (`CLAUDE_NUDGE_SOUND`, `CLAUDE_NUDGE_STOP`) |
 | `npx claude-nudge --force` | Skip the 3-second abort window when replacing an existing foreign `permission_prompt` hook |
 | `npx claude-nudge --help` | Show help |
 | `npx claude-nudge --version` | Print version |
