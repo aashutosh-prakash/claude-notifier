@@ -4,8 +4,13 @@
 
 **macOS only.** Two nudges are installed by default:
 
-- **Permission prompt** — Sosumi chime, body is 🔔 + the permission message (e.g. "🔔 Allow Bash `rm -rf`?"). Fires on the `Notification.permission_prompt` hook.
-- **Task complete** — Glass chime, body is `✅ Task complete`. Fires on the `Stop` hook when Claude finishes its response.
+**Permission prompt** — Sosumi chime, body is 🔔 + the permission message (e.g. "🔔 Allow Bash `rm -rf`?"). Fires on the `Notification.permission_prompt` hook.
+
+![Permission prompt notification on macOS](https://raw.githubusercontent.com/aashutosh-prakash/claude-nudge/main/assets/permission-prompt.png)
+
+**Task complete** — Glass chime, body is `✅ Task complete`. Fires on the `Stop` hook when Claude finishes its response.
+
+![Task complete notification on macOS](https://raw.githubusercontent.com/aashutosh-prakash/claude-nudge/main/assets/task-complete.png)
 
 Both show `Claude Code` as the title and the current project directory as the subtitle.
 
