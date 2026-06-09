@@ -201,6 +201,8 @@ npx claude-nudge --doctor
 
 **Can I turn off the task-complete notification?** Yes — `npx claude-nudge --disable-completion`. Permission prompts keep firing.
 
+**Using Cursor (or another editor that reads Claude Code hooks)?** claude-nudge only responds to genuine Claude Code events. Cursor's hooks service bridges your `~/.claude/settings.json` and fires its own lifecycle events (e.g. a lowercase `stop`) on every agent turn. The runner dispatches only on Claude Code's exact event names, so those bridged events are ignored — you won't get a notification (and no spurious "permission required" ping) from Cursor.
+
 ## Known limitation: notifications attribute to "Script Editor"
 
 Notifications are fired via `osascript`, which macOS always attributes to **Script Editor** (the AppleScript host app). Two visible consequences:

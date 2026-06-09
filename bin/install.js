@@ -534,9 +534,16 @@ async function cmdUninstall(p, flags) {
 // name), and the shell command-substitutes them before echo runs. Invoking the
 // runner directly with Node (process.execPath) keeps every byte of the payload
 // inert and drops any dependency on the runner's executable bit.
+// The synthetic payload --test and the --set-sound preview feed to the runner.
+// It MUST carry hook_event_name so the runner's exact-match resolver recognizes
+// it as a Notification event — without it the runner drops the payload and fires
+// nothing (see notify.js resolveEvent; a test in notify.test.js guards this).
+function buildNotifyPayload(message) {
+  return JSON.stringify({ hook_event_name: 'Notification', message, cwd: process.cwd() });
+}
+
 function fireNotification(p, message, env) {
-  const payload = JSON.stringify({ message, cwd: process.cwd() });
-  execFileSync(process.execPath, [p.runner], { input: payload, stdio: ['pipe', 'inherit', 'inherit'], env });
+  execFileSync(process.execPath, [p.runner], { input: buildNotifyPayload(message), stdio: ['pipe', 'inherit', 'inherit'], env });
 }
 
 function cmdTest(p) {
@@ -814,6 +821,7 @@ module.exports = {
   stampRunnerVersion,
   extractRunnerVersion,
   serializeSettings,
+  buildNotifyPayload,
   listSounds,
   settingsEnvStrings,
   removeOurEnv,

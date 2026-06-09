@@ -60,9 +60,19 @@ function sanitize(str, maxLen) {
   return stripped.length > maxLen ? stripped.slice(0, maxLen) : stripped;
 }
 
+// Claude Code emits event names in exact PascalCase (e.g. "Stop",
+// "Notification"). We dispatch ONLY on an exact match against EVENT_DEFAULTS —
+// its keys double as the allowlist of notifiable events. Anything else returns
+// null and main() exits silently: a case-variant like "stop" comes from another
+// host bridging the same hook config (e.g. Cursor), and there is deliberately
+// no fail-safe fallback to Notification (which would manufacture bogus pings and
+// bypass the CLAUDE_NUDGE_STOP opt-out). Keep these keys in lockstep with the
+// installer's HOOK_CONFIGS — a guard test enforces it.
 function resolveEvent(payload) {
   const name = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : '';
-  return EVENT_DEFAULTS[name] ? name : 'Notification';
+  // Own-property check, not a bracket-truthiness test: inherited members like
+  // "valueOf"/"constructor"/"__proto__" would otherwise resolve truthy and fire.
+  return Object.prototype.hasOwnProperty.call(EVENT_DEFAULTS, name) ? name : null;
 }
 
 // Prepend the event emoji to the (already sanitized + clamped) body. Applied
@@ -122,6 +132,12 @@ async function main() {
   }
 
   const event = resolveEvent(payload);
+
+  // Not a recognized Claude Code event (unknown, missing, or a foreign-host
+  // case-variant like Cursor's "stop") — exit silently before doing any work.
+  if (!event) {
+    process.exit(0);
+  }
 
   // Honor an opt-out of the task-complete notification without uninstalling the
   // hook — exit silently before doing any work.
